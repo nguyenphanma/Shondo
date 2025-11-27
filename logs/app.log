@@ -1,0 +1,85 @@
+2025-07-18 13:36:24,102 - INFO - Read 76 rows from categories_dump.xlsx
+2025-09-03 10:32:29,442 - INFO - Read 76 rows from categories_dump.xlsx
+2025-10-01 10:13:13,837 - INFO - Read 76 rows from categories_dump.xlsx
+2025-10-01 10:13:14,916 - ERROR - Failed to process Excel file: 'parentId'
+2025-10-01 10:21:46,883 - ERROR - Failed to process Excel file: [Errno 13] Permission denied: 'categories_dump.xlsx'
+2025-10-01 10:21:59,960 - INFO - Read 76 rows from categories_dump.xlsx
+2025-10-01 10:22:00,257 - ERROR - Failed to process Excel file: 'parentId'
+2025-10-01 10:30:16,703 - INFO - Read 76 rows from categories_dump.xlsx
+2025-10-01 10:30:17,011 - INFO - Inserted top-level category 591311
+2025-10-01 10:30:17,016 - INFO - Inserted top-level category 588160
+2025-10-01 10:30:17,023 - INFO - Inserted top-level category 588214
+2025-10-01 10:30:17,029 - INFO - Inserted top-level category 543055
+2025-10-01 10:30:17,037 - INFO - Inserted top-level category 513821
+2025-10-01 10:30:17,042 - INFO - Inserted top-level category 543058
+2025-10-01 10:30:17,587 - INFO - Inserted subcategory 588162
+2025-10-01 10:30:17,602 - INFO - Inserted subcategory 588161
+2025-10-01 10:30:17,615 - INFO - Inserted subcategory 591294
+2025-10-01 10:30:17,630 - INFO - Inserted subcategory 591317
+2025-10-01 10:30:17,862 - INFO - Inserted subcategory 588320
+2025-10-01 10:30:17,878 - INFO - Inserted subcategory 591301
+2025-10-01 10:30:17,888 - INFO - Inserted subcategory 591305
+2025-10-01 10:30:17,898 - INFO - Inserted subcategory 591309
+2025-10-01 10:30:17,908 - INFO - Inserted subcategory 591299
+2025-10-01 10:30:17,923 - INFO - Inserted subcategory 588331
+2025-10-01 10:30:17,977 - INFO - Inserted subcategory 588330
+2025-10-01 10:30:17,987 - INFO - Inserted subcategory 588329
+2025-10-01 10:30:17,998 - INFO - Inserted subcategory 588328
+2025-10-01 10:30:18,007 - INFO - Inserted subcategory 591306
+2025-10-01 10:30:18,016 - INFO - Inserted subcategory 588327
+2025-10-01 10:30:18,028 - INFO - Inserted subcategory 588326
+2025-10-01 10:30:18,038 - INFO - Inserted subcategory 588325
+2025-10-01 10:30:18,054 - INFO - Inserted subcategory 588324
+2025-10-01 10:30:18,063 - INFO - Inserted subcategory 588323
+2025-10-01 10:30:18,072 - INFO - Inserted subcategory 588322
+2025-10-01 10:30:18,097 - INFO - Inserted subcategory 588321
+2025-10-01 10:30:18,106 - INFO - Inserted subcategory 588333
+2025-10-01 10:30:18,117 - INFO - Inserted subcategory 588334
+2025-10-01 10:30:18,127 - INFO - Inserted subcategory 588332
+2025-10-01 10:30:18,136 - INFO - Inserted subcategory 589022
+2025-10-01 10:30:18,328 - INFO - Inserted subcategory 589023
+2025-10-01 10:30:18,339 - INFO - Inserted subcategory 591289
+2025-10-01 10:30:18,575 - INFO - Inserted subcategory 588335
+2025-10-01 10:30:18,600 - INFO - Inserted subcategory 588342
+2025-10-01 10:30:18,612 - INFO - Inserted subcategory 591310
+2025-10-01 10:30:18,622 - INFO - Inserted subcategory 591319
+2025-10-01 10:30:18,633 - INFO - Inserted subcategory 591321
+2025-10-01 10:30:18,644 - INFO - Inserted subcategory 591297
+2025-10-01 10:30:18,662 - INFO - Inserted subcategory 588343
+2025-10-01 10:30:18,674 - INFO - Inserted subcategory 588344
+2025-10-01 10:30:18,686 - INFO - Inserted subcategory 591315
+2025-10-01 10:30:18,707 - INFO - Inserted subcategory 591316
+2025-10-01 10:30:18,720 - INFO - Inserted subcategory 591320
+2025-10-01 10:30:18,730 - INFO - Inserted subcategory 588316
+2025-10-01 10:30:18,740 - INFO - Inserted subcategory 591300
+2025-10-01 10:30:18,750 - INFO - Inserted subcategory 591314
+2025-10-01 10:30:18,770 - INFO - Inserted subcategory 591303
+2025-10-01 10:30:18,779 - INFO - Inserted subcategory 591304
+2025-10-01 10:30:18,790 - INFO - Inserted subcategory 591313
+2025-10-01 10:30:18,805 - INFO - Inserted subcategory 588319
+2025-10-01 10:30:18,818 - INFO - Inserted subcategory 588318
+2025-10-01 10:30:18,828 - INFO - Inserted subcategory 588317
+2025-10-01 10:30:18,839 - INFO - Inserted subcategory 591298
+2025-10-01 10:30:18,849 - INFO - Inserted subcategory 591291
+2025-10-01 10:30:18,869 - INFO - Inserted subcategory 591295
+2025-10-01 10:30:19,106 - INFO - Inserted subcategory 591296
+2025-10-01 10:30:19,122 - INFO - Inserted subcategory 588336
+2025-10-01 10:30:19,351 - INFO - Inserted subcategory 591302
+2025-10-01 10:30:19,363 - INFO - Inserted subcategory 591318
+2025-10-01 10:30:19,373 - INFO - Inserted subcategory 591322
+2025-10-01 10:30:19,384 - INFO - Inserted subcategory 591323
+2025-10-01 10:30:19,393 - INFO - Inserted subcategory 588337
+2025-10-01 10:30:19,411 - INFO - Inserted subcategory 588338
+2025-10-01 10:30:19,428 - INFO - Inserted subcategory 588339
+2025-10-01 10:30:19,440 - INFO - Inserted subcategory 588340
+2025-10-01 10:30:19,453 - INFO - Inserted subcategory 588341
+2025-10-01 10:30:19,463 - INFO - Inserted subcategory 591292
+2025-10-01 10:30:19,680 - INFO - Inserted subcategory 588418
+2025-10-01 10:30:19,692 - INFO - Inserted subcategory 588419
+2025-10-01 10:30:19,701 - INFO - Inserted subcategory 588422
+2025-10-01 10:30:19,729 - INFO - Inserted subcategory 591307
+2025-10-01 10:30:19,741 - INFO - Inserted subcategory 588421
+2025-10-01 10:30:19,750 - INFO - Inserted subcategory 588423
+2025-10-01 10:30:19,759 - INFO - Inserted subcategory 588424
+2025-10-01 10:30:19,979 - INFO - Inserted subcategory 588420
+2025-10-01 10:30:20,275 - INFO - Category data dump completed successfully
