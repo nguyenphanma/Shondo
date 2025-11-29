@@ -408,5 +408,5 @@ df_fn_mer = df_fn_mer[
 ]
 
 worksheet_sale = sht.worksheet(SHEET1)
-worksheet_sale.clear()
+worksheet_sale.batch_clear(['A1:S'])
 gd.set_with_dataframe(worksheet_sale, df_fn_mer)

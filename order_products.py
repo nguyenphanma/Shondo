@@ -400,9 +400,9 @@ ORDER_YEAR  = 2025       # ví dụ: năm 2025
 
 # % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
 ALLOC_PERCENT = {
-    'ECOM': 0.9,
-    'KDC' : 0.9,
-    'KDS' : 0.8,
+    'ECOM': 0.8,
+    'KDC' : 0.6,
+    'KDS' : 0.8
 }
 
 # =========================
