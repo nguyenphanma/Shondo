@@ -128,7 +128,7 @@ filtered_orders AS (
         so.depotId,
         so.usedPointsMoney
     FROM sale_order so
-    WHERE so.status NOT IN ('Canceled', 'Returning', 'Failed','Returned', 'Aborted', 'CarrierCanceled', 'ConfirmReturned')
+    WHERE so.status = 'Success'
       AND so.type != 'Khách trả lại hàng'
       AND NOT (
             so.privateDescription LIKE '%MDX%'
@@ -262,7 +262,7 @@ JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
 JOIN order_source os ON eo.order_source_id = os.id
 WHERE
    DATE(eo.order_date) BETWEEN '2025-10-01' AND CURDATE() - INTERVAL 1 DAY
-   AND eo.status !='cancelled'
+   AND eo.status NOT IN ('cancelled', 'returned')
 """
 
 # Lấy dữ liệu bán hàng từ database
