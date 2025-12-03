@@ -512,8 +512,34 @@ def transfer_between_stores(filtered_df, df_warehouse, max_stock_normal_store=4)
 
     return pd.DataFrame(result_list)
 
+
+
+def _assign_store_caps(store_list, max_stock_normal_store: int):
+    """
+    Chia nhóm cửa hàng theo max_stock_normal_store:
+    - Nếu max_stock_normal_store = 3 -> nhóm 3,2,1 lặp lại
+    - Nếu = 4 -> nhóm 4,3,2,1 lặp lại
+    ...
+    """
+    caps = {}
+    if max_stock_normal_store is None or max_stock_normal_store <= 0:
+        max_stock_normal_store = 1
+
+    M = max_stock_normal_store
+
+    # Có thể sort để cố định thứ tự nếu muốn
+    store_list_sorted = sorted(store_list)
+
+    for idx, store in enumerate(store_list_sorted):
+        group_idx = idx % M          # 0..M-1
+        cap = M - group_idx          # M, M-1, ..., 1 rồi lặp lại
+        caps[store] = cap
+
+    return caps
+
+
 # Bốc tồn - bản tránh duplicate
-def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_stock_normal_store=3):
+def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_stock_normal_store=4):
     # ====== THAM SỐ HỆ THỐNG ======
     total_transfer_limit = 10000
     total_transferred = 0
@@ -527,6 +553,10 @@ def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_st
 
     # Danh sách cửa hàng
     store_list = filtered_df['store'].dropna().unique().tolist()
+
+    # ====== CHIA NHÓM SỨC CHỨA CHO CỬA HÀNG ======
+    # Ví dụ max_stock_normal_store = 3 -> nhóm 3,2,1
+    store_caps = _assign_store_caps(store_list, max_stock_normal_store)
 
     # Tồn hiện tại tại cửa hàng theo (store, fdcode)
     tmp = filtered_df[['store','fdcode','available']].copy()
@@ -567,7 +597,8 @@ def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_st
         to_store = row_need['store']
 
         current_stock = store_stock[(to_store, msp)]
-        max_transfer_allow = max_stock_normal_store - current_stock
+        store_cap = store_caps.get(to_store, max_stock_normal_store)
+        max_transfer_allow = store_cap - current_stock
         if max_transfer_allow <= 0:
             continue
 
@@ -580,8 +611,13 @@ def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_st
         if need_qty <= 0:
             continue
 
-        transfer_qty = min(warehouse_qty, need_qty, warehouse_transfer_limit,
-                           total_transfer_limit - total_transferred, max_transfer_allow)
+        transfer_qty = min(
+            warehouse_qty,
+            need_qty,
+            warehouse_transfer_limit,
+            total_transfer_limit - total_transferred,
+            max_transfer_allow
+        )
 
         if transfer_qty > 0:
             add_transfer('KHO TỔNG', to_store, msp, transfer_qty)
@@ -603,29 +639,55 @@ def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_st
         if transfer_qty_all <= 0:
             continue
 
-        qty_per_store = transfer_qty_all // max(1, len(store_list))
-        remainder = transfer_qty_all % max(1, len(store_list))
+        # --- 2.1: Lấy danh sách cửa hàng còn room, sort theo tồn hiện tại tăng dần ---
+        store_candidates = []
+        for store in store_list:
+            current_stock = store_stock[(store, msp)]
+            store_cap = store_caps.get(store, max_stock_normal_store)
+            if current_stock < store_cap:
+                store_candidates.append((store, current_stock, store_cap))
 
-        for idx_s, store in enumerate(store_list):
+        if not store_candidates:
+            continue
+
+        # Ưu tiên CH tồn thấp trước
+        store_candidates.sort(key=lambda x: x[1])  # sort theo current_stock tăng dần
+
+        # Chia sơ bộ theo số cửa hàng còn room
+        qty_per_store = transfer_qty_all // len(store_candidates)
+        remainder = transfer_qty_all % len(store_candidates)
+
+        given_for_msp = 0  # tổng số đã bốc thực tế cho mã này
+
+        for idx_s, (store, current_stock, store_cap) in enumerate(store_candidates):
             if total_transferred >= total_transfer_limit or warehouse_transfer_limit <= 0:
                 break
 
-            current_stock = store_stock[(store, msp)]
-            max_transfer_allow = max_stock_normal_store - current_stock
+            max_transfer_allow = store_cap - current_stock
             if max_transfer_allow <= 0:
                 continue
 
             intended_qty = qty_per_store + (1 if idx_s < remainder else 0)
-            give = min(intended_qty, max_transfer_allow,
-                       warehouse_transfer_limit, total_transfer_limit - total_transferred)
+
+            give = min(
+                intended_qty,
+                max_transfer_allow,
+                warehouse_transfer_limit,
+                total_transfer_limit - total_transferred
+            )
+
             if give > 0:
                 add_transfer('KHO TỔNG', store, msp, give)
                 warehouse_transfer_limit -= give
+                given_for_msp += give
 
-        # Xóa sạch tồn MSP đó tại kho tổng (đã phân bổ hết transfer_qty_all)
-        idx = df_warehouse['fdcode'] == msp
-        df_warehouse.loc[idx, 'available'] = df_warehouse.loc[idx, 'available'].fillna(0) - transfer_qty_all
-        df_warehouse.loc[idx, 'available'] = df_warehouse.loc[idx, 'available'].clip(lower=0)
+        # Trừ đúng số đã bốc thực tế cho mã này
+        if given_for_msp > 0:
+            idx = df_warehouse['fdcode'] == msp
+            df_warehouse.loc[idx, 'available'] = (
+                df_warehouse.loc[idx, 'available'].fillna(0) - given_for_msp
+            )
+            df_warehouse.loc[idx, 'available'] = df_warehouse.loc[idx, 'available'].clip(lower=0)
 
     # ====== 3) KHO GIA CÔNG THEO NHU CẦU (ƯU TIÊN TỒN ÍT) ======
     '''process_only_msp = df_process_warehouse[df_process_warehouse['available'].fillna(0) > 0].copy()

@@ -288,7 +288,7 @@ combined_df_ecom_gr = combined_df_ecom_mer.groupby(['channel', 'store', 'categor
 df_total = pd.concat([current_df_gr, combined_df_ecom_gr], ignore_index=True)
 
 df_total_filter = df_total[df_total['category'].isin(['SANDALS', 'SNEAKERS', 
-                                                      'SLIDES', 'KID SANDALS', 'KID SANEAKERS'])]
+                                                      'SLIDES', 'KID SANDALS', 'KID SNEAKERS'])]
 
 worksheet_sale = sht.worksheet(SHEET1)
 worksheet_sale.batch_clear(['A1:I'])
