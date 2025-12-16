@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import glob
+import numpy as np
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine, text
 from collections import defaultdict
@@ -33,49 +34,55 @@ df_warehouse = pd.DataFrame()
 df_process_warehouse = pd.DataFrame()
 
 query_products_template = """
-    SELECT 
-        ps.product_id AS parent_product_id,
-        ps.code AS default_code,               -- Mã sản phẩm cha
-        CASE 
-            WHEN ps2.code IS NULL THEN ps.code -- Nếu không có mã con thì lấy mã cha
-            ELSE ps2.code                      -- Nếu có mã con thì lấy mã con
-        END AS fdcode,
-        ps.price,
-        CASE
-        WHEN UPPER(c2.name) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN
-            CASE 
-            WHEN RIGHT(COALESCE(ps2.code, ps.code), 1) = 'W' THEN CONCAT(LEFT(COALESCE(ps2.code, ps.code), 2), 'W')
-            ELSE LEFT(COALESCE(ps2.code, ps.code), 2)
-            END
-        ELSE '#'
-        END AS size,
-        CASE 
-            WHEN c1.name IS NULL THEN c2.name 
-            ELSE c1.name 
-        END AS subcategory,
-        
-        CASE 
-            WHEN c2.name IS NULL THEN c1.name
-            ELSE c2.name 
-        END AS category,
-        ps2.launch_date,
-        CASE
-            WHEN ps2.launch_date IS NULL 
-                AND UPPER(c2.name) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN 'SP CHỜ BÁN'
-            WHEN DATEDIFF(CURRENT_DATE(), ps2.launch_date) <= 90 THEN 'SP MỚI'
-            WHEN UPPER(c2.name) IN ('BAGS', 'ACCESSORIES', 'BRACELETS', 'HATS', 'T-SHIRTS') THEN 'PHỤ KIỆN'
-            ELSE 'SP CŨ'
-        END AS type_products
-    FROM categories c1
-    LEFT JOIN categories c2
-        ON c1.parent_id = c2.category_id
-    LEFT JOIN products ps 
-        ON ps.category_id = c1.external_category_id 
-    AND ps.parent_id IN (-2, -1)                   -- Chỉ lấy SP cha
-    LEFT JOIN products ps2 
-        ON ps2.parent_id = ps.external_product_id     -- Ghép với SP con
-    WHERE ps.product_id IS NOT NULL
-        AND ps.code IS NOT NULL;
+        SELECT 
+            ps.product_id AS parent_product_id,
+            ps.code AS default_code,               -- Mã sản phẩm cha
+            ps.category_id,
+            -- Mã sản phẩm con (nếu có), nếu không thì dùng mã cha
+            COALESCE(ps2.code, ps.code) AS fdcode,
+
+            COALESCE(ps2.price, ps.price) AS price,
+
+            -- Size nếu là giày dép
+            CASE
+                WHEN UPPER(COALESCE(c2.name, c1.name)) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN
+                    CASE 
+                        WHEN RIGHT(COALESCE(ps2.code, ps.code), 1) = 'W' THEN CONCAT(LEFT(COALESCE(ps2.code, ps.code), 2), 'W')
+                        ELSE LEFT(COALESCE(ps2.code, ps.code), 2)
+                    END
+                ELSE '#'
+            END AS size,
+
+            -- Danh mục con
+            COALESCE(c1.name, c2.name) AS subcategory,
+
+            -- Danh mục cha
+            COALESCE(c2.name, c1.name) AS category,
+
+            -- Ngày launch từ sản phẩm con nếu có, không thì lấy của sản phẩm cha
+            COALESCE(ps2.launch_date, ps.launch_date) AS launch_date,
+
+            -- Phân loại sản phẩm
+            CASE
+                WHEN COALESCE(ps2.launch_date, ps.launch_date) IS NULL 
+                    AND UPPER(COALESCE(c2.name, c1.name)) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') 
+                    THEN 'SP CHỜ BÁN'
+                WHEN DATEDIFF(CURRENT_DATE(), COALESCE(ps2.launch_date, ps.launch_date)) <= 90 
+                    THEN 'SP MỚI'
+                WHEN UPPER(COALESCE(c2.name, c1.name)) IN ('BAGS', 'ACCESSORIES', 'BRACELETS', 'HATS', 'T-SHIRTS') 
+                    THEN 'PHỤ KIỆN'
+                ELSE 'SP CŨ'
+            END AS type_products,
+            ps.image
+        FROM products ps
+        LEFT JOIN products ps2 
+            ON ps2.parent_id = ps.external_product_id   -- Ghép sản phẩm con
+        LEFT JOIN categories c1 
+            ON ps.category_id = c1.external_category_id
+        LEFT JOIN categories c2 
+            ON c1.parent_id = c2.category_id
+        WHERE ps.parent_id IN (-2, -1)                  -- Chỉ lấy sản phẩm cha
+        AND ps.product_id IS NOT NULL
 """
 # Lấy dữ liệu bán hàng từ database
 with engine.connect() as conn:
@@ -91,7 +98,7 @@ df_template_process = pd.concat([df_template_process_1, df_template_process_2]).
 set_products_process = set(df_template_process['fdcode'])
 # 🧩 Hàm khởi tạo dữ liệu tồn kho và sức bán
 def initialize_data():
-    global df_warehouse, df_merge, df_store, combined_df, df_process_warehouse
+    global df_warehouse, df_merge, df_store, combined_df, df_process_warehouse, df_warehouse_ecom
 
     # Truy vấn dữ liệu tồn kho theo ngày lớn nhất
     query_data = """
@@ -113,7 +120,7 @@ def initialize_data():
                         depot_id, 
                         MAX(changed_at) AS max_changed_at
                     FROM product_inventory_history
-                    WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877)
+                    WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091)
                     GROUP BY product_id, depot_id
                 ),
 
@@ -133,7 +140,7 @@ def initialize_data():
                     LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
                     WHERE 
                         pih.available >= 1
-                        AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877)
+                        AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091)
                         AND DATE(pih.last_updated_at) = CURRENT_DATE() - INTERVAL 1 DAY
                 ),
 
@@ -174,18 +181,16 @@ def initialize_data():
 
     with engine.connect() as conn:
         df_stock = pd.read_sql_query(text(query_data), conn)
-    df_stock.replace({'ECOM2': 'ECOM', 
-                      'ECOM HN': 'ECOM',
-                      'ECOM SG': 'ECOM',
-                      'KHO BOXME': 'ECOM',
-                      'KHO SỈ':'KDS'}, inplace=True)
+    df_stock.replace({
+                    'KHO BOXME': 'ECOM',
+                    'ECOM SG': 'ECOM_SG',
+                    'KHO SỈ':'KDS'}, inplace=True)
 
 
     # Tách tồn kho theo kho
-    df_store = df_stock[df_stock['store'] != 'KHO TỔNG']
-
+    df_store = df_stock[~df_stock['store'].isin(['KHO TỔNG', 'ECOM_SG'])]  # ✅ ECOM_SG không phải store nhận hàng
     df_warehouse = df_stock[df_stock['store'] == 'KHO TỔNG']
-
+    df_warehouse_ecom = df_stock[df_stock['store'] == 'ECOM_SG']          # ✅ nguồn cấp cho ECOM
     df_process_warehouse = df_stock[df_stock['store'] == 'KHO GIA CÔNG']
     df_process_warehouse = df_process_warehouse[~df_process_warehouse['fdcode'].isin(set_products_process)]
 
@@ -263,7 +268,7 @@ def initialize_data():
                     END, 1
                 ) AS avg_qty
             FROM main_data
-            WHERE store NOT IN('KHO XUẤT', 'KHO SỈ')
+            WHERE store NOT IN('KHO XUẤT', 'ECOM')
             GROUP BY 
                 store,
                 category,
@@ -274,16 +279,177 @@ def initialize_data():
 
     with engine.connect() as conn:
         combined_df = pd.read_sql_query(text(query_sales_90_days), conn)
+
+    # SALE ECOM 90 DAYS
+    # Lấy thông tin từ biến môi trường
+    host_ecom = os.getenv("DB_HOST_ECOM")
+    user_ecom = os.getenv("DB_USER_ECOM")
+    password_ecom = os.getenv("DB_PASSWORD_ECOM")
+    database_ecom = os.getenv("DB_NAME_ECOM")
+    port_ecom = os.getenv("DB_PORT_ECOM", 3306)
+
+    # Kết nối MySQL
+    connection_string_ecom = f"mysql+pymysql://{user_ecom}:{password_ecom}@{host_ecom}:{port_ecom}/{database_ecom}"
+
+    # Thêm pool_pre_ping=True và connect_args để tăng thời gian chờ
+    engine_ecom = create_engine(
+        connection_string_ecom,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 30}  # tăng timeout từ mặc định (~10s) lên 20s
+    )
+
+
+    query_sales_90_days_ecom = """
+        SELECT
+            "ECOM" as store,
+            eoi.product_sku fdcode,
+            SUM(eoi.quantity) qty
+        FROM ecommerce_orders eo
+        JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
+        JOIN order_source os ON eo.order_source_id = os.id
+        WHERE
+            DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
+            AND eo.status NOT IN ('cancelled', 'returned')
+        GROUP BY store,
+                fdcode
+    """
+
+    # Lấy dữ liệu bán hàng từ database
+    with engine_ecom.connect() as conn:
+        combined_df_ecom = pd.read_sql_query(text(query_sales_90_days_ecom), conn)
+    print("query sale_ecom 90 day finished.")
+
+    combined_df_ecom_ft = combined_df_ecom[combined_df_ecom['fdcode'] != "" ]
+
+    combined_df_ecom_ft['fdcode'] = combined_df_ecom_ft['fdcode'].str.upper()
+    df_template['fdcode'] = df_template['fdcode'].str.upper()
+
+    combined_df_ecom_merge = pd.merge(
+        combined_df_ecom_ft,
+        df_template[['fdcode', 'default_code', 'category', 'subcategory', 'launch_date']],
+        on='fdcode',
+        how='left'
+    ) 
+
+    df = combined_df_ecom_merge.copy()
+
+    # Đảm bảo launch_date là datetime (an toàn nếu cột đang là string)
+    df['launch_date'] = pd.to_datetime(df['launch_date'], errors='coerce')
+
+    # Chọn keys nhóm giống logic gộp đầu ra (giữ theo channel + fdcode; 
+    # nếu bạn muốn chi tiết hơn có thể thêm 'default_code','category','subcategory')
+    keys = ['store', 'fdcode']
+
+    # Tổng qty theo nhóm và launch_date nhỏ nhất theo nhóm
+    total_qty = df.groupby(keys)['qty'].transform('sum')
+    min_launch = df.groupby(keys)['launch_date'].transform('min')
+
+    # Số ngày kể từ launch đến hôm nay (tránh chia 0)
+    today = pd.Timestamp.today().normalize()
+    days_since_launch = (today - min_launch).dt.days.clip(lower=1)
+
+    # avg_qty theo công thức:
+    # nếu days_since_launch <= 90:
+    #   avg_qty = total_qty / days_since_launch * 90 / 3
+    # else:
+    #   avg_qty = total_qty / 3
+    avg_qty = np.where(
+        days_since_launch <= 90,
+        total_qty / days_since_launch * 90 / 3,
+        total_qty / 3
+    )
+
+    df['avg_qty'] = np.round(avg_qty, 1)
+    combined_df_ecom_merge = df
+    df_sale_total = pd.concat([combined_df, combined_df_ecom_merge], ignore_index=True)
     # 6. Tính toán sức bán trung bình
     # KHAI BÁO SẢN PHẨM KHÔNG LUÂN CHUYỂN
-    subcategory_none = ['BAGS', 'CHARM', 'KEY RING', 'UPPER', 'RASTACLAT']
-    default_code_non = ['F6S2030', 'F6S2011', 'F7R2435', 'AOMUA2', 'COMBO FX', 
-                        'PLA2595', 'PLA0001', 'PLA1113', 'F7R2022', 'TRE2995', 
-                        'SND0002', 'SND2525', 'S2C0060', 'F6S1071', 'F6S1011', 
-                        'F6S1031', 'F6S1043', 'F7R2530', 'F6S2030', 'F6S2580', 
-                        'F6S2011', 'F6S0013', 'F6S2023', 'F6S1013']
-    combined_df = combined_df[~combined_df['subcategory'].isin(subcategory_none)]
-    df_sale = combined_df[['store', 'fdcode', 'default_code', 'qty', 'avg_qty']].fillna(0)
+    subcategory_none = ['KEY RING', 'UPPER', 'RASTACLAT']
+    default_code_non = [
+        # =========================
+        # LOẠI TRỪ CHUNG
+        # =========================
+        'AOMUA2',
+        'HOPF7SHONDO1',
+        'FXKHAYDUNGQUA',
+        'HOPGIAYF7M2',
+        'HOPGIAYF7D1',
+        'HOPGIAYF7D2',
+        'HOPGIAYF7M1',
+        'HOPGIAYS53',
+        'HOPKID52',
+        'HOPSINHNHAT62',
+        'HOPQUAIF8',
+        'HOPAOT',
+        'COMBO FX',
+        'COMBOFX',
+        'PLA2595',
+        'PLA0001',
+        'PLA1113',
+        'F7R2022',
+        'TRE2995',
+        'SND0002',
+        'SND2525',
+        'S2C0060',
+        'F6S1071',
+        'F6S1011',
+        'F6S1031',
+        'F6S1043',
+        'F6S2580',
+        'SC29',
+        'SC39',
+        'SC49',
+
+        # =========================
+        # NGỪNG BÁN
+        # =========================
+        'AOTH05-Ngừng bán',
+        'CHN0001-Ngừng bán',
+        'F6S0045-Ngừng bán',
+        'F6S3540-Ngừng bán',
+        'F7N1010-Ngừng bán',
+        'F7N7272-Ngừng bán',
+        'F7R1012-Ngừng bán',
+        'F7R1212-Ngừng bán',
+        'F7R3235-Ngừng bán',
+        'F7R7272-Ngừng bán',
+        'F8M0010-Ngừng bán',
+        'F8M0323-Ngừng bán',
+        'F8M1158-Ngừng bán',
+        'FLR1111-Ngừng bán',
+        'FLR2525-Ngừng bán',
+        'FLR7777-Ngừng bán',
+        'LIT0101-Ngừng bán',
+        'LIT2211-Ngừng bán',
+        'LIT2310-Ngừng bán',
+        'LIT7070-Ngừng bán',
+        'LIT7090-Ngừng bán',
+        'PLA1010-Ngừng bán',
+        'PLA9525-Ngừng bán',
+        'S2C0141-Ngừng bán',
+        'S2M2323-Ngừng bán',
+        'S2M3330-Ngừng bán',
+        'SND0013-Ngừng bán',
+        'SND0070-Ngừng bán',
+        'SND0104-Ngừng bán',
+        'SND0110-Ngừng bán',
+        'SND1212-Ngừng bán',
+        'SND2525-Ngừng bán',
+        'TAN2510-Ngừng bán',
+        'TRE003-Ngừng bán',
+        'TRE1115-Ngừng bán',
+        'TRE2022-Ngừng bán',
+        'TRE2529-Ngừng bán',
+        'TRE2544-Ngừng bán',
+        'TRE2596-Ngừng bán',
+        'TRE2995-Ngừng bán',
+        'TRE3030-Ngừng bán',
+        'TRE9001-Ngừng bán',
+        'TRE9525-Ngừng bán',
+    ]
+
+    df_sale_total = df_sale_total[~df_sale_total['subcategory'].isin(subcategory_none)]
+    df_sale = df_sale_total[['store', 'fdcode', 'default_code', 'qty', 'avg_qty']].fillna(0)
     df_sale = df_sale[df_sale['qty'] > 0]
     df_sale = df_sale.groupby(['store', 'fdcode','default_code']).agg({
         'qty': 'sum',
@@ -314,6 +480,27 @@ def initialize_data():
     #df_merge = df_merge[df_merge['need_qty'] != 0]
 
     print("Dữ liệu tồn kho và sức bán đã được khởi tạo thành công!")
+
+    # 8. ✅ QUAN TRỌNG: FILTER CÁC KHO
+    # ============================================================
+    # KHO TỔNG
+    df_warehouse = df_warehouse[~df_warehouse['subcategory'].isin(subcategory_none)]
+    df_warehouse = df_warehouse[~df_warehouse['fdcode'].isin(
+        df_template[df_template['default_code'].isin(default_code_non)]['fdcode'].unique()
+    )]
+    
+    # KHO ECOM_SG
+    df_warehouse_ecom = df_warehouse_ecom[~df_warehouse_ecom['subcategory'].isin(subcategory_none)]
+    df_warehouse_ecom = df_warehouse_ecom[~df_warehouse_ecom['fdcode'].isin(
+        df_template[df_template['default_code'].isin(default_code_non)]['fdcode'].unique()
+    )]
+    
+    # KHO GIA CÔNG (đã có logic riêng)
+    df_process_warehouse = df_process_warehouse[~df_process_warehouse['fdcode'].isin(set_products_process)]
+    df_process_warehouse = df_process_warehouse[~df_process_warehouse['subcategory'].isin(subcategory_none)]
+    df_process_warehouse = df_process_warehouse[~df_process_warehouse['fdcode'].isin(
+        df_template[df_template['default_code'].isin(default_code_non)]['fdcode'].unique()
+    )]
 
 def stock_for_new_store(filtered_df, df_warehouse):
     result_list = []
@@ -513,69 +700,92 @@ def transfer_between_stores(filtered_df, df_warehouse, max_stock_normal_store=4)
     return pd.DataFrame(result_list)
 
 
-
 def _assign_store_caps(store_list, max_stock_normal_store: int):
     """
     Chia nhóm cửa hàng theo max_stock_normal_store:
     - Nếu max_stock_normal_store = 3 -> nhóm 3,2,1 lặp lại
     - Nếu = 4 -> nhóm 4,3,2,1 lặp lại
-    ...
     """
     caps = {}
     if max_stock_normal_store is None or max_stock_normal_store <= 0:
         max_stock_normal_store = 1
 
     M = max_stock_normal_store
-
-    # Có thể sort để cố định thứ tự nếu muốn
     store_list_sorted = sorted(store_list)
 
     for idx, store in enumerate(store_list_sorted):
-        group_idx = idx % M          # 0..M-1
-        cap = M - group_idx          # M, M-1, ..., 1 rồi lặp lại
+        group_idx = idx % M
+        cap = M - group_idx
         caps[store] = cap
 
     return caps
 
 
-# Bốc tồn - bản tránh duplicate
-def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_stock_normal_store=4):
-    # ====== THAM SỐ HỆ THỐNG ======
+def stock_from_warehouse(
+    filtered_df,
+    df_warehouse,
+    df_process_warehouse,
+    max_stock_normal_store=4,
+    df_warehouse_ecom=None,
+    ecom_min_stock =10,
+    ecom_max_stock =100,
+    allow_ecom_fallback_to_general=False,
+    debug=True
+):
+    ECOM_STORE = "ECOM"
+    ECOM_SOURCE = "ECOM_SG"
     total_transfer_limit = 10000
     total_transferred = 0
 
-    # ====== TIỀN XỬ LÝ ======
-    # Cửa hàng cần hàng (loại NEW)
+    # NORMALIZE
     filtered_df = filtered_df.copy()
-    filtered_df['Is_New_Store'] = filtered_df['store'].apply(lambda x: 1 if 'new' in str(x).lower() else 0)
-    df_need = filtered_df[(filtered_df['need_qty'] < 0) & (filtered_df['Is_New_Store'] != 1)].copy()
-    df_need = df_need.sort_values(by='avg_qty', ascending=False)
+    filtered_df["store"] = filtered_df["store"].astype(str).str.strip()
+    filtered_df["fdcode"] = filtered_df["fdcode"].astype(str).str.strip().str.upper()
 
-    # Danh sách cửa hàng
-    store_list = filtered_df['store'].dropna().unique().tolist()
+    if df_warehouse is not None and not df_warehouse.empty:
+        df_warehouse["fdcode"] = df_warehouse["fdcode"].astype(str).str.strip().str.upper()
 
-    # ====== CHIA NHÓM SỨC CHỨA CHO CỬA HÀNG ======
-    # Ví dụ max_stock_normal_store = 3 -> nhóm 3,2,1
+    if df_warehouse_ecom is not None and not df_warehouse_ecom.empty:
+        df_warehouse_ecom["fdcode"] = df_warehouse_ecom["fdcode"].astype(str).str.strip().str.upper()
+
+    if df_process_warehouse is not None and not df_process_warehouse.empty:
+        df_process_warehouse["fdcode"] = df_process_warehouse["fdcode"].astype(str).str.strip().str.upper()
+
+    def is_ecom_store(s):
+        return str(s).strip().upper() == ECOM_STORE
+
+    # PREP NEED
+    filtered_df["Is_New_Store"] = filtered_df["store"].apply(
+        lambda x: 1 if "new" in str(x).lower() else 0
+    )
+    df_need = filtered_df[(filtered_df["need_qty"] < 0) & (filtered_df["Is_New_Store"] != 1)].copy()
+    df_need = df_need.sort_values(by="avg_qty", ascending=False)
+
+    store_list = filtered_df["store"].dropna().unique().tolist()
+    store_list = [s for s in store_list if str(s).strip().upper() != ECOM_SOURCE]
+
     store_caps = _assign_store_caps(store_list, max_stock_normal_store)
+    
+    # ✅ Override cap cho ECOM
+    if ECOM_STORE in store_caps:
+        store_caps[ECOM_STORE] = ecom_min_stock
 
-    # Tồn hiện tại tại cửa hàng theo (store, fdcode)
-    tmp = filtered_df[['store','fdcode','available']].copy()
-    tmp['available'] = tmp['available'].fillna(0)
+    # Tồn hiện tại tại store
+    tmp = filtered_df[["store", "fdcode", "available"]].copy()
+    tmp["available"] = tmp["available"].fillna(0)
+
     store_stock = defaultdict(int)
     for _, r in tmp.iterrows():
-        store_stock[(r['store'], r['fdcode'])] = int(r['available'])
+        store_stock[(r["store"], r["fdcode"])] = int(r["available"])
 
-    # Nhu cầu còn lại (số dương) theo (store, fdcode)
+    # Need remaining
     need_remaining = defaultdict(int)
-    need_view = df_need[['store','fdcode','need_qty']].copy()
-    for _, r in need_view.iterrows():
-        need_remaining[(r['store'], r['fdcode'])] = int(abs(r['need_qty']))
+    for _, r in df_need[["store", "fdcode", "need_qty"]].iterrows():
+        need_remaining[(r["store"], r["fdcode"])] = int(abs(r["need_qty"]))
 
-    # Bộ gộp kết quả: (from_store, to_store, fdcode) -> qty
     transfers = defaultdict(int)
 
     def add_transfer(from_store, to_store, msp, qty):
-        """Cộng dồn kết quả + cập nhật tồn/nhu cầu."""
         nonlocal total_transferred
         if qty <= 0:
             return
@@ -585,188 +795,331 @@ def stock_from_warehouse(filtered_df, df_warehouse, df_process_warehouse, max_st
         if (to_store, msp) in need_remaining:
             need_remaining[(to_store, msp)] = max(0, need_remaining[(to_store, msp)] - qty)
 
-    # ====== 1) BỐC TỪ KHO TỔNG THEO NHU CẦU ======
-    warehouse_total_qty = int(df_warehouse['available'].fillna(0).sum())
-    warehouse_transfer_limit = warehouse_total_qty
+    def wh_decrease(df_wh, msp, qty):
+        if df_wh is None or df_wh.empty or qty <= 0:
+            return
+        idx = df_wh["fdcode"] == msp
+        if idx.any():
+            df_wh.loc[idx, "available"] = df_wh.loc[idx, "available"].fillna(0) - qty
+            df_wh.loc[idx, "available"] = df_wh.loc[idx, "available"].clip(lower=0)
 
-    for _, row_need in df_need.iterrows():
-        if total_transferred >= total_transfer_limit or warehouse_transfer_limit <= 0:
-            break
+    # LIMITS
+    wh_total_limit = int(df_warehouse["available"].fillna(0).sum()) if df_warehouse is not None else 0
+    wh_ecom_limit = int(df_warehouse_ecom["available"].fillna(0).sum()) if (df_warehouse_ecom is not None and not df_warehouse_ecom.empty) else 0
 
-        msp = row_need['fdcode']
-        to_store = row_need['store']
+    # ✅ FIX: Kiểm tra ECOM có trong store_list không
+    has_ecom_store = any(is_ecom_store(s) for s in store_list)
 
-        current_stock = store_stock[(to_store, msp)]
-        store_cap = store_caps.get(to_store, max_stock_normal_store)
-        max_transfer_allow = store_cap - current_stock
-        if max_transfer_allow <= 0:
-            continue
+    # STEP 0) FORCE ECOM_SG -> ECOM BY NEED
+    if df_warehouse_ecom is not None and not df_warehouse_ecom.empty and wh_ecom_limit > 0 and has_ecom_store:
+        ecom_need_rows = df_need[df_need["store"].apply(is_ecom_store)]
 
-        # tồn kho tổng cho MSP
-        warehouse_qty = int(df_warehouse.loc[df_warehouse['fdcode'] == msp, 'available'].fillna(0).sum())
-        if warehouse_qty <= 0:
-            continue
-
-        need_qty = need_remaining[(to_store, msp)]
-        if need_qty <= 0:
-            continue
-
-        transfer_qty = min(
-            warehouse_qty,
-            need_qty,
-            warehouse_transfer_limit,
-            total_transfer_limit - total_transferred,
-            max_transfer_allow
-        )
-
-        if transfer_qty > 0:
-            add_transfer('KHO TỔNG', to_store, msp, transfer_qty)
-            # trừ tồn kho tổng cho MSP
-            idx = df_warehouse['fdcode'] == msp
-            df_warehouse.loc[idx, 'available'] = df_warehouse.loc[idx, 'available'].fillna(0) - transfer_qty
-            warehouse_transfer_limit -= transfer_qty
-
-    # ====== 2) CHIA ĐỀU TỪ KHO TỔNG (MÃ CÒN TỒN) ======
-    # Lấy các MSP còn tồn sau bước 1
-    wh_left = df_warehouse[df_warehouse['available'].fillna(0) > 0].copy()
-
-    for msp, group in wh_left.groupby('fdcode'):
-        if total_transferred >= total_transfer_limit or warehouse_transfer_limit <= 0:
-            break
-
-        total_qty = int(group['available'].sum())
-        transfer_qty_all = min(total_qty, warehouse_transfer_limit, total_transfer_limit - total_transferred)
-        if transfer_qty_all <= 0:
-            continue
-
-        # --- 2.1: Lấy danh sách cửa hàng còn room, sort theo tồn hiện tại tăng dần ---
-        store_candidates = []
-        for store in store_list:
-            current_stock = store_stock[(store, msp)]
-            store_cap = store_caps.get(store, max_stock_normal_store)
-            if current_stock < store_cap:
-                store_candidates.append((store, current_stock, store_cap))
-
-        if not store_candidates:
-            continue
-
-        # Ưu tiên CH tồn thấp trước
-        store_candidates.sort(key=lambda x: x[1])  # sort theo current_stock tăng dần
-
-        # Chia sơ bộ theo số cửa hàng còn room
-        qty_per_store = transfer_qty_all // len(store_candidates)
-        remainder = transfer_qty_all % len(store_candidates)
-
-        given_for_msp = 0  # tổng số đã bốc thực tế cho mã này
-
-        for idx_s, (store, current_stock, store_cap) in enumerate(store_candidates):
-            if total_transferred >= total_transfer_limit or warehouse_transfer_limit <= 0:
+        for _, row in ecom_need_rows.iterrows():
+            if total_transferred >= total_transfer_limit or wh_ecom_limit <= 0:
                 break
 
-            max_transfer_allow = store_cap - current_stock
-            if max_transfer_allow <= 0:
+            msp = row["fdcode"]
+            to_store = ECOM_STORE
+
+            need_qty = need_remaining[(to_store, msp)]
+            if need_qty <= 0:
                 continue
 
-            intended_qty = qty_per_store + (1 if idx_s < remainder else 0)
+            current = store_stock[(to_store, msp)]
+            cap = store_caps.get(to_store, max_stock_normal_store)
+            room = cap - current
+            
+            # ✅ Kiểm tra tối đa cho ECOM
+            if is_ecom_store(to_store):
+                if current >= ecom_max_stock:
+                    if debug:
+                        print(f"      ⚠️  ECOM đã đạt max ({current} >= {ecom_max_stock}), bỏ qua")
+                    continue
+                room = min(room, ecom_max_stock - current)
+            if room <= 0:
+                continue
+
+            src_qty = int(
+                df_warehouse_ecom.loc[df_warehouse_ecom["fdcode"] == msp, "available"]
+                .fillna(0).sum()
+            )
+            if src_qty <= 0:
+                continue
 
             give = min(
-                intended_qty,
-                max_transfer_allow,
-                warehouse_transfer_limit,
-                total_transfer_limit - total_transferred
+                src_qty,
+                need_qty,
+                room,
+                wh_ecom_limit,
+                total_transfer_limit - total_transferred,
             )
-
             if give > 0:
-                add_transfer('KHO TỔNG', store, msp, give)
-                warehouse_transfer_limit -= give
-                given_for_msp += give
+                add_transfer(ECOM_SOURCE, ECOM_STORE, msp, give)
+                wh_decrease(df_warehouse_ecom, msp, give)
+                wh_ecom_limit -= give
 
-        # Trừ đúng số đã bốc thực tế cho mã này
-        if given_for_msp > 0:
-            idx = df_warehouse['fdcode'] == msp
-            df_warehouse.loc[idx, 'available'] = (
-                df_warehouse.loc[idx, 'available'].fillna(0) - given_for_msp
-            )
-            df_warehouse.loc[idx, 'available'] = df_warehouse.loc[idx, 'available'].clip(lower=0)
-
-    # ====== 3) KHO GIA CÔNG THEO NHU CẦU (ƯU TIÊN TỒN ÍT) ======
-    '''process_only_msp = df_process_warehouse[df_process_warehouse['available'].fillna(0) > 0].copy()
-    process_only_msp = process_only_msp.sort_values(by='available')
-
+    # STEP 1) PULL BY NEED FROM GENERAL WAREHOUSE
     for _, row_need in df_need.iterrows():
-        if total_transferred >= total_transfer_limit:
+        if total_transferred >= total_transfer_limit or wh_total_limit <= 0:
             break
 
-        msp = row_need['fdcode']
-        to_store = row_need['store']
+        msp = row_need["fdcode"]
+        to_store = row_need["store"]
+
+        if is_ecom_store(to_store) and not allow_ecom_fallback_to_general:
+            continue
 
         need_qty = need_remaining[(to_store, msp)]
         if need_qty <= 0:
             continue
 
-        # tồn gia công còn lại
-        proc_qty = int(df_process_warehouse.loc[df_process_warehouse['fdcode'] == msp, 'available'].fillna(0).sum())
-        if proc_qty <= 0:
+        current = store_stock[(to_store, msp)]
+        cap = store_caps.get(to_store, max_stock_normal_store)
+        room = cap - current
+        
+        # ✅ Kiểm tra tối đa cho ECOM
+        if is_ecom_store(to_store):
+            if current >= ecom_max_stock:
+                continue
+            room = min(room, ecom_max_stock - current)
+        
+        if room <= 0:
             continue
 
-        current_stock = store_stock[(to_store, msp)]
-        max_transfer_allow = max_stock_normal_store - current_stock
-        if max_transfer_allow <= 0:
+        wh_qty = int(df_warehouse.loc[df_warehouse["fdcode"] == msp, "available"].fillna(0).sum())
+        if wh_qty <= 0:
             continue
 
-        give = min(proc_qty, need_qty, max_transfer_allow, total_transfer_limit - total_transferred)
+        give = min(
+            wh_qty,
+            need_qty,
+            room,
+            wh_total_limit,
+            total_transfer_limit - total_transferred,
+        )
         if give > 0:
-            add_transfer('KHO GIA CÔNG', to_store, msp, give)
-            idx = df_process_warehouse['fdcode'] == msp
-            df_process_warehouse.loc[idx, 'available'] = df_process_warehouse.loc[idx, 'available'].fillna(0) - give
+            add_transfer("KHO TỔNG", to_store, msp, give)
+            wh_decrease(df_warehouse, msp, give)
+            wh_total_limit -= give
 
-    # ====== 4) CHIA ĐỀU KHO GIA CÔNG (CÒN LẠI) ======
-    proc_left = df_process_warehouse[df_process_warehouse['available'].fillna(0) > 0].copy()
+    # STEP 2) EVEN DISTRIBUTION FROM GENERAL WAREHOUSE LEFTOVER
+    if df_warehouse is not None and not df_warehouse.empty:
+        wh_left = df_warehouse[df_warehouse["available"].fillna(0) > 0].copy()
 
-    for _, row_proc in proc_left.iterrows():
-        if total_transferred >= total_transfer_limit:
-            break
-
-        msp = row_proc['fdcode']
-        qty_stock = int(row_proc['available'])
-        give_all = min(qty_stock, total_transfer_limit - total_transferred)
-        if give_all <= 0:
-            continue
-
-        qty_per_store = give_all // max(1, len(store_list))
-        remainder = give_all % max(1, len(store_list))
-
-        distributed = 0
-        for idx_s, store in enumerate(store_list):
-            if total_transferred >= total_transfer_limit:
+        for msp, group in wh_left.groupby("fdcode"):
+            if total_transferred >= total_transfer_limit or wh_total_limit <= 0:
                 break
 
-            current_stock = store_stock[(store, msp)]
-            max_transfer_allow = max_stock_normal_store - current_stock
-            if max_transfer_allow <= 0:
+            total_qty = int(group["available"].sum())
+            give_all = min(total_qty, wh_total_limit, total_transfer_limit - total_transferred)
+            if give_all <= 0:
                 continue
 
-            intended = qty_per_store + (1 if idx_s < remainder else 0)
-            give = min(intended, max_transfer_allow, give_all - distributed)
+            store_candidates = []
+            for store in store_list:
+                if is_ecom_store(store) and not allow_ecom_fallback_to_general:
+                    continue
+
+                current = store_stock[(store, msp)]
+                cap = store_caps.get(store, max_stock_normal_store)
+                if current < cap:
+                    store_candidates.append((store, current, cap))
+
+            if not store_candidates:
+                continue
+
+            store_candidates.sort(key=lambda x: x[1])
+
+            qty_per_store = give_all // len(store_candidates)
+            remainder = give_all % len(store_candidates)
+
+            distributed = 0
+            for i, (store, current, cap) in enumerate(store_candidates):
+                if total_transferred >= total_transfer_limit or wh_total_limit <= 0:
+                    break
+
+                room = cap - current
+                if room <= 0:
+                    continue
+
+                intended = qty_per_store + (1 if i < remainder else 0)
+                give = min(intended, room, give_all - distributed, wh_total_limit, total_transfer_limit - total_transferred)
+
+                if give > 0:
+                    add_transfer("KHO TỔNG", store, msp, give)
+                    distributed += give
+                    wh_total_limit -= give
+
+            if distributed > 0:
+                wh_decrease(df_warehouse, msp, distributed)
+
+    # ✅ STEP 2.5) EVEN DISTRIBUTION FROM ECOM_SG LEFTOVER -> only ECOM
+    if df_warehouse_ecom is not None and not df_warehouse_ecom.empty and wh_ecom_limit > 0 and has_ecom_store:
+        wh_left_ecom = df_warehouse_ecom[df_warehouse_ecom["available"].fillna(0) > 0].copy()
+
+        for msp, group in wh_left_ecom.groupby("fdcode"):
+            if total_transferred >= total_transfer_limit or wh_ecom_limit <= 0:
+                break
+
+            total_qty = int(group["available"].sum())
+            give_all = min(total_qty, wh_ecom_limit, total_transfer_limit - total_transferred)
+            if give_all <= 0:
+                continue
+
+            current = store_stock[(ECOM_STORE, msp)]
+            cap = store_caps.get(ECOM_STORE, max_stock_normal_store)
+            room = cap - current
+            
+            # ✅ Kiểm tra tối đa cho ECOM
+            if current >= ecom_max_stock:
+                if debug:
+                    print(f"      ⚠️  ECOM đã đạt max ({current} >= {ecom_max_stock}), bỏ qua {msp}")
+                continue
+            room = min(room, ecom_max_stock - current)
+            if room <= 0:
+                continue
+
+            give = min(give_all, room, wh_ecom_limit, total_transfer_limit - total_transferred)
             if give > 0:
-                add_transfer('KHO GIA CÔNG', store, msp, give)
+                add_transfer(ECOM_SOURCE, ECOM_STORE, msp, give)
+                wh_decrease(df_warehouse_ecom, msp, give)
+                wh_ecom_limit -= give
+
+# STEP 3) PROCESS WAREHOUSE (TOP-UP THEO TỒN) - UPDATED RULES
+
+    def cap_process_after_transfer(store, fdcode):
+        fd = str(fdcode).upper().strip()
+        st = str(store).upper().strip()
+        is_ecom = (st == "ECOM")
+
+        # ❌ ECOM không bốc mã HF*
+        if is_ecom and fd.startswith("HF"):
+            return 0
+
+        # ✅ TUIRUT* : như TUIGIAY nhưng CHỈ cho ECOM
+        if fd.startswith("TUIRUT"):
+            return 2000 if is_ecom else 0
+
+        # ✅ CHM* tối đa 10 (mọi store)
+        if fd.startswith("CHM"):
+            return 10
+
+        # ✅ HOPKID / HOPSUKID tối đa 50 (mọi store)
+        if fd.startswith(("HOPKID", "HOPSUKID")):
+            return 50
+
+        # HOPGIAY theo size
+        if fd.startswith(("HOPGIAYS", "HOPGIAYL")):
+            return 0 if is_ecom else 100
+
+        if fd.startswith("HOPGIAYM"):
+            return 2000 if is_ecom else 200
+        
+        if fd.startswith("HOPLIMAXNAM"):
+            return 500 if is_ecom else 50
+        
+        if fd.startswith("HOPLIMAXNU"):
+            return 1500 if is_ecom else 100
+
+        # TUIGIAY
+        if fd.startswith("TUIGIAY"):
+            return 0 if is_ecom else 200
+        
+        # TUINHUAM01
+        if fd.startswith(('TUINHUA','TUIRAS1')):
+            return 0 if is_ecom else 3
+        
+        # GIẤY NẾN
+        if fd.startswith("GIAYLIMAX"):
+            return 0 if is_ecom else 3
+
+        # Còn lại
+        return 3
+
+
+    def adjust_qty_special(fdcode, qty):
+        """
+        Rule số lượng đặc biệt:
+        - VOSCC*: bốc theo bội số 5, tối thiểu 5
+        """
+        fd = str(fdcode).upper().strip()
+
+        if fd.startswith("VOSC"):
+            if qty < 5:
+                return 0
+            return (qty // 5) * 5
+
+        return qty
+
+
+    def add_transfer_process(to_store, msp, qty):
+        # Add transfer từ KHO GIA CÔNG nhưng KHÔNG cộng total_transferred
+        if qty <= 0:
+            return
+        transfers[("KHO GIA CÔNG", to_store, msp)] += qty
+        store_stock[(to_store, msp)] += qty
+
+
+    store_list_proc = [s for s in store_list if str(s).upper().strip() != "ECOM_SG"]
+
+    if df_process_warehouse is not None and not df_process_warehouse.empty:
+
+        df_process_warehouse["fdcode"] = df_process_warehouse["fdcode"].astype(str).str.upper().str.strip()
+
+        proc_sum = (
+            df_process_warehouse.groupby("fdcode", as_index=False)["available"]
+            .sum()
+            .sort_values("available", ascending=False)
+        )
+
+        for _, row in proc_sum.iterrows():
+            msp = row["fdcode"]
+            proc_qty_left = int(row["available"])
+            if proc_qty_left <= 0:
+                continue
+
+            candidates = []
+            for st in store_list_proc:
+                current = int(store_stock[(st, msp)])
+                cap_total = cap_process_after_transfer(st, msp)
+                room = cap_total - current
+                if room > 0:
+                    candidates.append((st, current, room))
+
+            if not candidates:
+                continue
+
+            candidates.sort(key=lambda x: x[1])  # tồn thấp trước
+
+            distributed = 0
+            for st, current, room in candidates:
+                if proc_qty_left <= 0:
+                    break
+
+                raw_give = min(proc_qty_left, room)
+                give = adjust_qty_special(msp, raw_give)
+
+                if give <= 0:
+                    continue
+
+                add_transfer_process(st, msp, give)
+                proc_qty_left -= give
                 distributed += give
 
-        # trừ kho gia công cho MSP hiện tại
-        idx = df_process_warehouse['fdcode'] == msp
-        df_process_warehouse.loc[idx, 'available'] = df_process_warehouse.loc[idx, 'available'].fillna(0) - distributed
-        df_process_warehouse.loc[idx, 'available'] = df_process_warehouse.loc[idx, 'available'].clip(lower=0)'''
+            if distributed > 0:
+                wh_decrease(df_process_warehouse, msp, distributed)
 
-    # ====== TRẢ KẾT QUẢ (ĐÃ GỘP, KHÔNG DUPLICATE) ======
+
+    # OUTPUT
     if not transfers:
-        return pd.DataFrame(columns=['from_store','to_store','fdcode','transfer_qty'])
+        return pd.DataFrame(columns=["from_store", "to_store", "fdcode", "transfer_qty"])
 
-    rows = []
-    for (f, t, m), q in transfers.items():
-        if q > 0:
-            rows.append({'from_store': f, 'to_store': t, 'fdcode': m, 'transfer_qty': int(q)})
-
-    return pd.DataFrame(rows, columns=['from_store','to_store','fdcode','transfer_qty'])
+    rows = [
+        {"from_store": f, "to_store": t, "fdcode": m, "transfer_qty": int(q)}
+        for (f, t, m), q in transfers.items()
+        if q > 0
+    ]
+    return pd.DataFrame(rows, columns=["from_store", "to_store", "fdcode", "transfer_qty"])
 
 # LẤY HÀNG TỪ FILE IMPORT
 def allocate_import_to_stores(imported_df, df_merge):

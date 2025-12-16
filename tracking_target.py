@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 
 gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
-sht = gs.open_by_key('17NnOz2LjM2-xak60x3ZputnuIi6Fy1j27VAQNkHBpjA')
+sht = gs.open_by_key('1aFDuIMWZvW2dBIJsUpWgE4XUyIFfW4wFqq4Undhoyfw')
 SHEET1 = 'data_sale'
 
 print('Finished querying the google sheet')

@@ -160,6 +160,7 @@ def show_stock():
     with engine.connect() as conn:
         df_stock = pd.read_sql_query(text(query_data), conn,)
     df_stock.replace({'ECOM2': 'ECOM',
+                      'KHO BOXME': 'ECOM',
                     'KHO SỈ':'KDS'}, inplace=True)
     df_stock = pd.merge(df_stock, df_products_template[['fdcode', 'default_code']], on='fdcode', how='left')
     subcategory_none = ['BAGS', 'CHARM', 'KEY RING', 'UPPER', 'RASTACLAT']

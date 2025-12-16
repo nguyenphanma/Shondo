@@ -83,3 +83,163 @@
 2025-10-01 10:30:19,759 - INFO - Inserted subcategory 588424
 2025-10-01 10:30:19,979 - INFO - Inserted subcategory 588420
 2025-10-01 10:30:20,275 - INFO - Category data dump completed successfully
+2025-12-13 11:19:34,019 - INFO - Read 78 rows from categories_dump.xlsx
+2025-12-13 11:19:34,885 - INFO - Inserted top-level category 591311
+2025-12-13 11:19:35,109 - INFO - Inserted top-level category 588160
+2025-12-13 11:19:35,145 - INFO - Inserted top-level category 588214
+2025-12-13 11:19:35,199 - INFO - Inserted top-level category 543055
+2025-12-13 11:19:35,233 - INFO - Inserted top-level category 513821
+2025-12-13 11:19:35,296 - INFO - Inserted top-level category 543058
+2025-12-13 11:19:35,833 - INFO - Inserted subcategory 588162
+2025-12-13 11:19:36,111 - INFO - Inserted subcategory 588161
+2025-12-13 11:19:36,147 - INFO - Inserted subcategory 591294
+2025-12-13 11:19:36,544 - INFO - Inserted subcategory 591317
+2025-12-13 11:19:36,660 - INFO - Inserted subcategory 588320
+2025-12-13 11:19:36,722 - INFO - Inserted subcategory 591301
+2025-12-13 11:19:37,160 - INFO - Inserted subcategory 591305
+2025-12-13 11:19:37,244 - INFO - Inserted subcategory 591309
+2025-12-13 11:19:37,380 - INFO - Inserted subcategory 588326
+2025-12-13 11:19:37,528 - INFO - Inserted subcategory 588327
+2025-12-13 11:19:37,743 - INFO - Inserted subcategory 588328
+2025-12-13 11:19:37,983 - INFO - Inserted subcategory 591299
+2025-12-13 11:19:38,042 - INFO - Inserted subcategory 588325
+2025-12-13 11:19:38,078 - INFO - Inserted subcategory 591306
+2025-12-13 11:19:38,137 - INFO - Inserted subcategory 588324
+2025-12-13 11:19:38,470 - INFO - Inserted subcategory 588323
+2025-12-13 11:19:38,561 - INFO - Inserted subcategory 588322
+2025-12-13 11:19:38,599 - INFO - Inserted subcategory 588321
+2025-12-13 11:19:38,644 - INFO - Inserted subcategory 588331
+2025-12-13 11:19:38,682 - INFO - Inserted subcategory 588332
+2025-12-13 11:19:38,728 - INFO - Inserted subcategory 588333
+2025-12-13 11:19:38,762 - INFO - Inserted subcategory 588334
+2025-12-13 11:19:38,812 - INFO - Inserted subcategory 588335
+2025-12-13 11:19:38,862 - INFO - Inserted subcategory 588329
+2025-12-13 11:19:38,916 - INFO - Inserted subcategory 589022
+2025-12-13 11:19:38,965 - INFO - Inserted subcategory 589023
+2025-12-13 11:19:39,040 - INFO - Inserted subcategory 591289
+2025-12-13 11:19:39,079 - INFO - Inserted subcategory 588330
+2025-12-13 11:19:39,178 - INFO - Inserted subcategory 588342
+2025-12-13 11:19:39,227 - INFO - Inserted subcategory 591310
+2025-12-13 11:19:39,280 - INFO - Inserted subcategory 591319
+2025-12-13 11:19:39,342 - INFO - Inserted subcategory 591321
+2025-12-13 11:19:39,444 - INFO - Inserted subcategory 591324
+2025-12-13 11:19:39,538 - INFO - Inserted subcategory 588343
+2025-12-13 11:19:39,579 - INFO - Inserted subcategory 588344
+2025-12-13 11:19:39,612 - INFO - Inserted subcategory 591297
+2025-12-13 11:19:39,694 - INFO - Inserted subcategory 588316
+2025-12-13 11:19:39,755 - INFO - Inserted subcategory 591300
+2025-12-13 11:19:39,817 - INFO - Inserted subcategory 591314
+2025-12-13 11:19:39,873 - INFO - Inserted subcategory 591303
+2025-12-13 11:19:39,928 - INFO - Inserted subcategory 591304
+2025-12-13 11:19:40,019 - INFO - Inserted subcategory 591295
+2025-12-13 11:19:40,086 - INFO - Inserted subcategory 591298
+2025-12-13 11:19:40,161 - INFO - Inserted subcategory 591313
+2025-12-13 11:19:40,406 - INFO - Inserted subcategory 588319
+2025-12-13 11:19:40,511 - INFO - Inserted subcategory 588318
+2025-12-13 11:19:40,926 - INFO - Inserted subcategory 588317
+2025-12-13 11:19:41,346 - INFO - Inserted subcategory 591291
+2025-12-13 11:19:41,531 - INFO - Inserted subcategory 591296
+2025-12-13 11:19:41,579 - INFO - Inserted subcategory 591315
+2025-12-13 11:19:41,638 - INFO - Inserted subcategory 591316
+2025-12-13 11:19:41,766 - INFO - Inserted subcategory 591320
+2025-12-13 11:19:42,113 - INFO - Inserted subcategory 588336
+2025-12-13 11:19:42,263 - INFO - Inserted subcategory 591302
+2025-12-13 11:19:42,370 - INFO - Inserted subcategory 591318
+2025-12-13 11:19:42,588 - INFO - Inserted subcategory 591322
+2025-12-13 11:19:42,615 - INFO - Inserted subcategory 591323
+2025-12-13 11:19:42,762 - INFO - Inserted subcategory 591325
+2025-12-13 11:19:42,880 - INFO - Inserted subcategory 588337
+2025-12-13 11:19:43,006 - INFO - Inserted subcategory 588338
+2025-12-13 11:19:43,177 - INFO - Inserted subcategory 588339
+2025-12-13 11:19:43,677 - INFO - Inserted subcategory 588340
+2025-12-13 11:19:43,705 - INFO - Inserted subcategory 588341
+2025-12-13 11:19:44,030 - INFO - Inserted subcategory 591292
+2025-12-13 11:19:44,195 - INFO - Inserted subcategory 588418
+2025-12-13 11:19:44,272 - INFO - Inserted subcategory 588419
+2025-12-13 11:19:44,419 - INFO - Inserted subcategory 588422
+2025-12-13 11:19:44,487 - INFO - Inserted subcategory 591307
+2025-12-13 11:19:44,517 - INFO - Inserted subcategory 588421
+2025-12-13 11:19:44,603 - INFO - Inserted subcategory 588423
+2025-12-13 11:19:44,759 - INFO - Inserted subcategory 588424
+2025-12-13 11:19:44,944 - INFO - Inserted subcategory 588420
+2025-12-13 11:19:45,120 - INFO - Category data dump completed successfully
+2025-12-13 12:19:01,164 - INFO - Read 78 rows from categories_dump.xlsx
+2025-12-13 12:19:01,236 - INFO - Inserted top-level category 591311
+2025-12-13 12:19:01,240 - INFO - Inserted top-level category 588160
+2025-12-13 12:19:01,245 - INFO - Inserted top-level category 588214
+2025-12-13 12:19:01,250 - INFO - Inserted top-level category 543055
+2025-12-13 12:19:01,252 - INFO - Inserted top-level category 513821
+2025-12-13 12:19:01,265 - INFO - Inserted top-level category 543058
+2025-12-13 12:19:01,277 - INFO - Inserted subcategory 588162
+2025-12-13 12:19:01,289 - INFO - Inserted subcategory 588161
+2025-12-13 12:19:01,302 - INFO - Inserted subcategory 591294
+2025-12-13 12:19:01,385 - INFO - Inserted subcategory 591317
+2025-12-13 12:19:01,403 - INFO - Inserted subcategory 588320
+2025-12-13 12:19:01,413 - INFO - Inserted subcategory 591301
+2025-12-13 12:19:01,425 - INFO - Inserted subcategory 591305
+2025-12-13 12:19:01,445 - INFO - Inserted subcategory 591309
+2025-12-13 12:19:01,666 - INFO - Inserted subcategory 588326
+2025-12-13 12:19:01,684 - INFO - Inserted subcategory 588327
+2025-12-13 12:19:01,689 - INFO - Inserted subcategory 588328
+2025-12-13 12:19:01,705 - INFO - Inserted subcategory 591299
+2025-12-13 12:19:01,716 - INFO - Inserted subcategory 588325
+2025-12-13 12:19:01,724 - INFO - Inserted subcategory 591306
+2025-12-13 12:19:01,735 - INFO - Inserted subcategory 588324
+2025-12-13 12:19:01,750 - INFO - Inserted subcategory 588323
+2025-12-13 12:19:01,757 - INFO - Inserted subcategory 588322
+2025-12-13 12:19:01,768 - INFO - Inserted subcategory 588321
+2025-12-13 12:19:01,777 - INFO - Inserted subcategory 588331
+2025-12-13 12:19:01,786 - INFO - Inserted subcategory 588332
+2025-12-13 12:19:01,793 - INFO - Inserted subcategory 588333
+2025-12-13 12:19:01,805 - INFO - Inserted subcategory 588334
+2025-12-13 12:19:01,819 - INFO - Inserted subcategory 588335
+2025-12-13 12:19:01,833 - INFO - Inserted subcategory 588329
+2025-12-13 12:19:01,833 - INFO - Inserted subcategory 589022
+2025-12-13 12:19:01,852 - INFO - Inserted subcategory 589023
+2025-12-13 12:19:01,852 - INFO - Inserted subcategory 591289
+2025-12-13 12:19:01,868 - INFO - Inserted subcategory 588330
+2025-12-13 12:19:01,868 - INFO - Inserted subcategory 588342
+2025-12-13 12:19:01,885 - INFO - Inserted subcategory 591310
+2025-12-13 12:19:01,895 - INFO - Inserted subcategory 591319
+2025-12-13 12:19:01,903 - INFO - Inserted subcategory 591321
+2025-12-13 12:19:01,909 - INFO - Inserted subcategory 591324
+2025-12-13 12:19:01,919 - INFO - Inserted subcategory 588343
+2025-12-13 12:19:02,141 - INFO - Inserted subcategory 588344
+2025-12-13 12:19:02,164 - INFO - Inserted subcategory 591297
+2025-12-13 12:19:02,176 - INFO - Inserted subcategory 588316
+2025-12-13 12:19:02,400 - INFO - Inserted subcategory 591300
+2025-12-13 12:19:02,400 - INFO - Inserted subcategory 591314
+2025-12-13 12:19:02,840 - INFO - Inserted subcategory 591303
+2025-12-13 12:19:02,852 - INFO - Inserted subcategory 591304
+2025-12-13 12:19:02,860 - INFO - Inserted subcategory 591295
+2025-12-13 12:19:02,873 - INFO - Inserted subcategory 591298
+2025-12-13 12:19:02,880 - INFO - Inserted subcategory 591313
+2025-12-13 12:19:02,889 - INFO - Inserted subcategory 588319
+2025-12-13 12:19:02,908 - INFO - Inserted subcategory 588318
+2025-12-13 12:19:03,129 - INFO - Inserted subcategory 588317
+2025-12-13 12:19:03,138 - INFO - Inserted subcategory 591291
+2025-12-13 12:19:03,157 - INFO - Inserted subcategory 591296
+2025-12-13 12:19:03,167 - INFO - Inserted subcategory 591315
+2025-12-13 12:19:03,181 - INFO - Inserted subcategory 591316
+2025-12-13 12:19:03,192 - INFO - Inserted subcategory 591320
+2025-12-13 12:19:03,205 - INFO - Inserted subcategory 588336
+2025-12-13 12:19:03,217 - INFO - Inserted subcategory 591302
+2025-12-13 12:19:03,227 - INFO - Inserted subcategory 591318
+2025-12-13 12:19:03,237 - INFO - Inserted subcategory 591322
+2025-12-13 12:19:03,249 - INFO - Inserted subcategory 591323
+2025-12-13 12:19:03,272 - INFO - Inserted subcategory 591325
+2025-12-13 12:19:03,283 - INFO - Inserted subcategory 588337
+2025-12-13 12:19:03,291 - INFO - Inserted subcategory 588338
+2025-12-13 12:19:03,300 - INFO - Inserted subcategory 588339
+2025-12-13 12:19:03,317 - INFO - Inserted subcategory 588340
+2025-12-13 12:19:03,327 - INFO - Inserted subcategory 588341
+2025-12-13 12:19:03,336 - INFO - Inserted subcategory 591292
+2025-12-13 12:19:03,345 - INFO - Inserted subcategory 588418
+2025-12-13 12:19:03,354 - INFO - Inserted subcategory 588419
+2025-12-13 12:19:03,365 - INFO - Inserted subcategory 588422
+2025-12-13 12:19:03,379 - INFO - Inserted subcategory 591307
+2025-12-13 12:19:03,393 - INFO - Inserted subcategory 588421
+2025-12-13 12:19:03,408 - INFO - Inserted subcategory 588423
+2025-12-13 12:19:03,428 - INFO - Inserted subcategory 588424
+2025-12-13 12:19:03,437 - INFO - Inserted subcategory 588420
+2025-12-13 12:19:03,446 - INFO - Category data dump completed successfully

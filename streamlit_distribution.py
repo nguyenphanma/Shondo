@@ -1,45 +1,79 @@
 import streamlit as st
 import distribution as dt  # File chứa các hàm tính toán
 import pandas as pd
-import matplotlib.pyplot as plt
 import show_distribution
-
-
 
 # Khởi tạo dữ liệu tồn kho và sức bán
 def initialize_inventory(moh_value):
     dt.MOH = moh_value
     dt.initialize_data()
     show_distribution.show_stock()
-    return dt.df_merge.copy(), dt.df_warehouse.copy(), dt.df_process_warehouse.copy()
+    # ✅ THÊM df_warehouse_ecom vào return
+    return (
+        dt.df_merge.copy(), 
+        dt.df_warehouse.copy(), 
+        dt.df_process_warehouse.copy(),
+        dt.df_warehouse_ecom.copy()  # ✅ THÊM DÒNG NÀY
+    )
 
 # Hàm cập nhật tồn kho sau mỗi tác vụ
-def update_stock(transfer_df, df_merge, df_warehouse, df_process_warehouse):
+def update_stock(transfer_df, df_merge, df_warehouse, df_process_warehouse, df_warehouse_ecom=None):
+    """
+    Cập nhật tồn kho sau khi transfer
+    
+    Returns:
+        tuple: (df_merge, df_warehouse, df_process_warehouse, df_warehouse_ecom)
+    """
+    if transfer_df.empty:
+        return df_merge, df_warehouse, df_process_warehouse, df_warehouse_ecom
+    
+    # Copy để không modify original
+    df_merge = df_merge.copy()
+    df_warehouse = df_warehouse.copy() if df_warehouse is not None else None
+    df_process_warehouse = df_process_warehouse.copy() if df_process_warehouse is not None else None
+    df_warehouse_ecom = df_warehouse_ecom.copy() if df_warehouse_ecom is not None else None
+    
+    # Cập nhật tồn kho tại điểm đến (stores)
     for _, row in transfer_df.iterrows():
-        if row['from_store'] == "KHO TỔNG":
-            df_warehouse.loc[df_warehouse['fdcode'] == row['fdcode'], 'available'] -= row['transfer_qty']
-        elif row['from_store'] == "KHO GIA CÔNG":
-            if not df_process_warehouse[df_process_warehouse['fdcode'] == row['fdcode']].empty:
-                df_process_warehouse.loc[df_process_warehouse['fdcode'] == row['fdcode'], 'available'] -= row['transfer_qty']
-            else:
-                raise ValueError(f"fdcode {row['fdcode']} không tồn tại trong 'KHO GIA CÔNG'")
-        else:
-            mask_from = (df_merge['store'] == row['from_store']) & (df_merge['fdcode'] == row['fdcode'])
-            df_merge.loc[mask_from, 'available'] -= row['transfer_qty']
-
-        mask_to = (df_merge['store'] == row['to_store']) & (df_merge['fdcode'] == row['fdcode'])
-        if not df_merge[mask_to].empty:
-            df_merge.loc[mask_to, 'available'] += row['transfer_qty']
-        else:
-            new_row = {
-                'store': row['to_store'],
-                'fdcode': row['fdcode'],
-                'available': row['transfer_qty'],
-                'need_qty': 0,
-                'Is_New_store': 0
-            }
-            df_merge = pd.concat([df_merge, pd.DataFrame([new_row])], ignore_index=True)
-    return df_merge, df_warehouse, df_process_warehouse
+        to_store = row['to_store']
+        fdcode = row['fdcode']
+        qty = row['transfer_qty']
+        
+        # Tìm và cập nhật trong df_merge
+        mask = (df_merge['store'] == to_store) & (df_merge['fdcode'] == fdcode)
+        if mask.any():
+            df_merge.loc[mask, 'available'] = df_merge.loc[mask, 'available'].fillna(0) + qty
+            df_merge.loc[mask, 'need_qty'] = df_merge.loc[mask, 'available'] - df_merge.loc[mask, 'plan_qty']
+    
+    # Cập nhật tồn kho tại nguồn (warehouses)
+    for _, row in transfer_df.iterrows():
+        from_store = row['from_store']
+        fdcode = row['fdcode']
+        qty = row['transfer_qty']
+        
+        # Trừ tồn từ kho nguồn
+        if from_store == 'KHO TỔNG' and df_warehouse is not None:
+            mask = df_warehouse['fdcode'] == fdcode
+            if mask.any():
+                df_warehouse.loc[mask, 'available'] = (
+                    df_warehouse.loc[mask, 'available'].fillna(0) - qty
+                ).clip(lower=0)
+        
+        elif from_store == 'ECOM_SG' and df_warehouse_ecom is not None:  # ✅ XỬ LÝ ECOM_SG
+            mask = df_warehouse_ecom['fdcode'] == fdcode
+            if mask.any():
+                df_warehouse_ecom.loc[mask, 'available'] = (
+                    df_warehouse_ecom.loc[mask, 'available'].fillna(0) - qty
+                ).clip(lower=0)
+        
+        elif from_store == 'KHO GIA CÔNG' and df_process_warehouse is not None:
+            mask = df_process_warehouse['fdcode'] == fdcode
+            if mask.any():
+                df_process_warehouse.loc[mask, 'available'] = (
+                    df_process_warehouse.loc[mask, 'available'].fillna(0) - qty
+                ).clip(lower=0)
+    
+    return df_merge, df_warehouse, df_process_warehouse, df_warehouse_ecom
 
 # Hàm lọc loại bỏ cửa hàng và fdcode không cần luân chuyển
 def filter_excluded_data(df, excluded_stores, excluded_fdcode):
@@ -49,7 +83,7 @@ def filter_excluded_data(df, excluded_stores, excluded_fdcode):
         df = df[~df['default_code'].isin(excluded_fdcode)]
     return df
 
-# Khởi tạo session_state
+# ✅ Khởi tạo session_state - THÊM df_warehouse_ecom
 if "df_merge" not in st.session_state:
     st.session_state.df_merge = pd.DataFrame()
 
@@ -58,6 +92,10 @@ if "df_warehouse" not in st.session_state:
 
 if "df_process_warehouse" not in st.session_state:
     st.session_state.df_process_warehouse = pd.DataFrame()
+
+# ✅ THÊM DÒNG NÀY
+if "df_warehouse_ecom" not in st.session_state:
+    st.session_state.df_warehouse_ecom = pd.DataFrame()
 
 if "task_results" not in st.session_state:
     st.session_state.task_results = []
@@ -80,12 +118,19 @@ if page == "Distribution Task":
 
     # Nút khởi tạo dữ liệu
     if st.sidebar.button("Khởi tạo dữ liệu"):
-        st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse = initialize_inventory(moh_value)
+        # ✅ NHẬN 4 giá trị thay vì 3
+        (st.session_state.df_merge, 
+         st.session_state.df_warehouse, 
+         st.session_state.df_process_warehouse,
+         st.session_state.df_warehouse_ecom) = initialize_inventory(moh_value)  # ✅ SỬA DÒNG NÀY
+        
         st.session_state.df_merge["Is_New_store"] = 0
         st.session_state.df_merge_before = st.session_state.df_merge.copy()
         st.session_state.df_merge_initial = st.session_state.df_merge.copy()  # Lưu bản gốc
         st.session_state.df_warehouse_initial = st.session_state.df_warehouse.copy()  # Lưu bản gốc
         st.session_state.df_process_warehouse_initial = st.session_state.df_process_warehouse.copy()
+        # ✅ THÊM DÒNG NÀY
+        st.session_state.df_warehouse_ecom_initial = st.session_state.df_warehouse_ecom.copy()
         st.session_state.task_results = []
         st.success("Dữ liệu đã khởi tạo thành công!")
 
@@ -139,12 +184,30 @@ if page == "Distribution Task":
                 st.error("Dữ liệu 'KHO GIA CÔNG' không hợp lệ. Vui lòng kiểm tra lại.")
             else:
                 filtered_df = filter_excluded_data(st.session_state.df_merge.copy(), excluded_stores, excluded_fdcode)
+                
+                # ✅ FIX: Truyền đầy đủ tham số, bao gồm df_warehouse_ecom
                 transfer_df = dt.stock_from_warehouse(
-                    filtered_df, st.session_state.df_warehouse, st.session_state.df_process_warehouse
+                    filtered_df=filtered_df,
+                    df_warehouse=st.session_state.df_warehouse,
+                    df_process_warehouse=st.session_state.df_process_warehouse,
+                    max_stock_normal_store=4,
+                    df_warehouse_ecom=st.session_state.df_warehouse_ecom,  # ✅ THÊM DÒNG NÀY
+                    allow_ecom_fallback_to_general=False,
+                    debug=False  # Tắt debug trong production, bật True nếu cần debug
                 )
-                st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse = update_stock(
-                    transfer_df, st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse
+                
+                # ✅ Cập nhật cả df_warehouse_ecom sau khi transfer
+                (st.session_state.df_merge, 
+                st.session_state.df_warehouse, 
+                st.session_state.df_process_warehouse,
+                st.session_state.df_warehouse_ecom) = update_stock(
+                    transfer_df, 
+                    st.session_state.df_merge, 
+                    st.session_state.df_warehouse, 
+                    st.session_state.df_process_warehouse,
+                    st.session_state.df_warehouse_ecom  # ✅ THÊM THAM SỐ NÀY
                 )
+                
                 st.session_state.task_results.append(("Bốc Tồn Từ Kho Tổng", transfer_df))
                 st.success("Đã bốc tồn từ kho tổng!")
         else:
