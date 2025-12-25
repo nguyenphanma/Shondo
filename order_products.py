@@ -395,8 +395,8 @@ df_target['month'] = df_target['month'].astype(int)
 # =========================
 # 0) THAM SỐ THÁNG ĐẶT HÀNG
 # =========================
-ORDER_MONTH = 12         # ví dụ: tháng 11
-ORDER_YEAR  = 2025       # ví dụ: năm 2025
+ORDER_MONTH = 4         # ví dụ: tháng 11
+ORDER_YEAR  = 2026     # ví dụ: năm 2025
 
 # % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
 ALLOC_PERCENT = {
@@ -899,9 +899,17 @@ combined_fxt = combined_ft[['channel', 'fdcode', 'size', 'default_code', 'subcat
 
 print("Starting to process LIST_ORDER sheet...")
 worksheet_ord = sht.worksheet(SHEET3)
-worksheet_ord.clear()
-print("Cleared LIST_ORDER sheet.")
-gd.set_with_dataframe(worksheet_ord, combined_fxt)
+worksheet_ord.batch_clear(["A5:K"])
+print("Cleared LIST_ORDER from A5 to K.")
+
+# Ghi dữ liệu mới từ A5
+gd.set_with_dataframe(
+    worksheet_ord,
+    combined_fxt,
+    row=5,
+    col=1,
+    include_column_header=True
+)
 print("LIST_ORDER sheet updated with data.")
 
 print("Starting to process REPORT sheet...")

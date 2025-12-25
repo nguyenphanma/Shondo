@@ -172,7 +172,7 @@ df_stock_filter = df_stock[['store', 'fdcode', 'available', 'subcategory', 'cate
 def channel(code):
     if code == 'KHO SỈ':
         return 'KDS'
-    if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', 'ECOM HN', 'KHO BOXME'):
+    if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', 'KHO BOXME'):
         return 'ECOM'
     return 'KDC'
 df_stock['channel'] = df_stock['store'].apply(channel)
@@ -350,16 +350,16 @@ def calculate_discount(row):
 
     # Thiết lập mức giảm giá dựa trên `month_launch`
     if 3 < month_launch <= 6:
-        discount = 0.2
+        discount = 0.1
     elif 6 < month_launch <= 9:
-        discount = 0.3
+        discount = 0.2
     elif 9 < month_launch <= 12:
-        discount = 0.4
+        discount = 0.3
     elif month_launch > 12:
         if hst > 5:
-            discount = 0.6
-        else:
             discount = 0.5
+        else:
+            discount = 0.4
 
     # Giới hạn mức giảm giá với type_products = 'S'
     if type_products == 'S':

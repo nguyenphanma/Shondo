@@ -36,7 +36,7 @@ def main():
     engine = create_engine(connection_string)
 
     def channel(code):
-        if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', 'ECOM HN', 'KHO BOXME'):
+        if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', 'KHO BOXME'):
             return 'ECOM'
         if code in ('KHO SỈ', 'KDS'):
             return 'KDS'
@@ -50,9 +50,7 @@ def main():
             ps.category_id,
             -- Mã sản phẩm con (nếu có), nếu không thì dùng mã cha
             COALESCE(ps2.code, ps.code) AS fdcode,
-
             COALESCE(ps2.price, ps.price) AS price,
-
             -- Size nếu là giày dép
             CASE
                 WHEN UPPER(COALESCE(c2.name, c1.name)) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN

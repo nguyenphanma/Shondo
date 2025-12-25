@@ -190,8 +190,10 @@ if page == "Distribution Task":
                     filtered_df=filtered_df,
                     df_warehouse=st.session_state.df_warehouse,
                     df_process_warehouse=st.session_state.df_process_warehouse,
-                    max_stock_normal_store=4,
+                    max_stock_normal_store=3,
                     df_warehouse_ecom=st.session_state.df_warehouse_ecom,  # ✅ THÊM DÒNG NÀY
+                    ecom_min_stock=10,  # Mức ưu tiên
+                    ecom_max_stock=100, # Giới hạn cứng ✅
                     allow_ecom_fallback_to_general=False,
                     debug=False  # Tắt debug trong production, bật True nếu cần debug
                 )
