@@ -376,7 +376,7 @@ combined_df_ecom_mer = pd.merge(combined_df_ecom, df_template_fix[['fdcode', 'de
 combined_df_ecom_filter = combined_df_ecom_mer[['order_id', 'date_order', 'channel', 'store',
                                                 'category', 'subcategory', 'default_code', 'qty', 'rvn', 'price_status']]
 df_total = pd.concat([current_df, combined_df_ecom_filter], ignore_index=True)
-df_total = df_total[df_total['default_code'].isin(['SUK0060', 'SUK6000', 'GIM0001', 'F109595'])]
+#df_total = df_total[df_total['default_code'].isin(['SUK0060', 'SUK6000', 'GIM0001', 'F109595'])]
 worksheet_ss = sht.worksheet(SHEET1)
 worksheet_ss.batch_clear(['A1:K'])
 gd.set_with_dataframe(worksheet_ss, df_total)

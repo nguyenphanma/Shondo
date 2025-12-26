@@ -3,6 +3,50 @@ import distribution as dt  # File chứa các hàm tính toán
 import pandas as pd
 import show_distribution
 
+
+def sanitize_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
+    """Make df Arrow-safe for Streamlit rendering."""
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+
+    # ✅ ép các cột code thường bị lẫn int/str về str
+    for col in ["default_code", "fdcode", "store", "from_store", "to_store"]:
+        if col in out.columns:
+            out[col] = out[col].astype(str)
+
+    for c in out.columns:
+        s = out[c]
+
+        # timezone datetime -> remove tz (bản mới tránh warning)
+        if isinstance(s.dtype, pd.DatetimeTZDtype):
+            out[c] = s.dt.tz_localize(None)
+            continue
+
+        # object columns: ép mixed types về string
+        if s.dtype == "object":
+            sample = s.dropna().head(200)
+            if not sample.empty:
+                types = {type(v) for v in sample.values}
+                if len(types) > 1:
+                    out[c] = s.astype(str)
+
+    return out
+
+def normalize_core_dtypes():
+    """Ép các cột code về string ngay trong session_state để tránh Arrow lỗi ở mọi nơi."""
+    if "df_merge" in st.session_state and not st.session_state.df_merge.empty:
+        for col in ["default_code", "fdcode", "store"]:
+            if col in st.session_state.df_merge.columns:
+                st.session_state.df_merge[col] = st.session_state.df_merge[col].astype(str)
+
+    for key in ["df_warehouse", "df_process_warehouse", "df_warehouse_ecom"]:
+        df = st.session_state.get(key)
+        if df is not None and not df.empty and "fdcode" in df.columns:
+            df["fdcode"] = df["fdcode"].astype(str)
+            st.session_state[key] = df
+
 # Khởi tạo dữ liệu tồn kho và sức bán
 def initialize_inventory(moh_value):
     dt.MOH = moh_value
@@ -106,6 +150,16 @@ if "df_merge_before" not in st.session_state:
 if "show_add_store" not in st.session_state:
     st.session_state.show_add_store = False
 
+# ✅ Config cho stock_from_warehouse
+if "cfg_stock_from_wh" not in st.session_state:
+    st.session_state.cfg_stock_from_wh = {
+        "max_stock_normal_store": 3,
+        "ecom_min_stock": 10,
+        "ecom_max_stock": 200,
+        "allow_ecom_fallback_to_general": False,
+        "debug": False,
+    }
+
 # Giao diện Streamlit
 st.sidebar.title("Chọn Chức Năng")
 page = st.sidebar.selectbox("Đi tới trang:", ["Distribution Task"])
@@ -122,8 +176,9 @@ if page == "Distribution Task":
         (st.session_state.df_merge, 
          st.session_state.df_warehouse, 
          st.session_state.df_process_warehouse,
-         st.session_state.df_warehouse_ecom) = initialize_inventory(moh_value)  # ✅ SỬA DÒNG NÀY
-        
+         st.session_state.df_warehouse_ecom) = initialize_inventory(moh_value)  # ✅ SỬA DÒNG NÀ
+        normalize_core_dtypes()
+
         st.session_state.df_merge["Is_New_store"] = 0
         st.session_state.df_merge_before = st.session_state.df_merge.copy()
         st.session_state.df_merge_initial = st.session_state.df_merge.copy()  # Lưu bản gốc
@@ -140,6 +195,8 @@ if page == "Distribution Task":
             st.session_state.df_merge = st.session_state.df_merge_initial.copy()
             st.session_state.df_warehouse = st.session_state.df_warehouse_initial.copy()
             st.session_state.df_process_warehouse = st.session_state.df_process_warehouse_initial.copy()
+            st.session_state.df_warehouse_ecom = st.session_state.df_warehouse_ecom_initial.copy()
+            normalize_core_dtypes()
             st.session_state.task_results = []
             st.session_state.show_add_store = False
             st.success("Dữ liệu đã được khôi phục về trạng thái ban đầu!")
@@ -154,6 +211,42 @@ if page == "Distribution Task":
     excluded_fdcode = st.sidebar.multiselect("Chọn default_code không luân chuyển:", 
                                           st.session_state.df_merge['default_code'].unique() 
                                           if not st.session_state.df_merge.empty else [])
+    # ✅ UI cấu hình bốc tồn
+    st.sidebar.subheader("Cấu hình Bốc Tồn (Kho Tổng)")
+
+    with st.sidebar.expander("Thiết lập nâng cao", expanded=False):
+        cfg = st.session_state.cfg_stock_from_wh
+
+        cfg["max_stock_normal_store"] = st.number_input(
+            "max_stock_normal_store",
+            min_value=1, max_value=20,
+            value=int(cfg["max_stock_normal_store"]),
+            step=1
+        )
+
+        cfg["ecom_min_stock"] = st.number_input(
+            "ecom_min_stock (ưu tiên ECOM)",
+            min_value=10, max_value=50,
+            value=int(cfg["ecom_min_stock"]),
+            step=10
+        )
+
+        cfg["ecom_max_stock"] = st.number_input(
+            "ecom_max_stock (giới hạn cứng ECOM)",
+            min_value=50, max_value=500,
+            value=int(cfg["ecom_max_stock"]),
+            step=10
+        )
+
+        cfg["allow_ecom_fallback_to_general"] = st.checkbox(
+            "Bốc hàng ĐA KHO",
+            value=bool(cfg["allow_ecom_fallback_to_general"])
+        )
+
+        cfg["debug"] = st.checkbox(
+            "debug",
+            value=bool(cfg["debug"])
+        )
 
     # Gom hàng cho cửa hàng mới
     if st.sidebar.button("Gom Hàng - New store"):
@@ -163,7 +256,8 @@ if page == "Distribution Task":
             st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse = update_stock(
                 transfer_df, st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse
             )
-            st.session_state.task_results.append(("Gom Hàng Cho Cửa Hàng Mới", transfer_df))
+            normalize_core_dtypes()
+            st.session_state.task_results.append(("Gom Hàng Cho Cửa Hàng Mới", sanitize_for_streamlit(transfer_df)))
             st.success("Đã gom hàng cho cửa hàng mới!")
 
     # Luân chuyển hàng hóa giữa các cửa hàng
@@ -171,10 +265,11 @@ if page == "Distribution Task":
         if not st.session_state.df_merge.empty:
             filtered_df = filter_excluded_data(st.session_state.df_merge.copy(), excluded_stores, excluded_fdcode)
             transfer_df = dt.transfer_between_stores(filtered_df, st.session_state.df_warehouse)
-            st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse = update_stock(
-                transfer_df, st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse
+            st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse, st.session_state.df_warehouse_ecom = update_stock(
+                transfer_df, st.session_state.df_merge, st.session_state.df_warehouse, st.session_state.df_process_warehouse, st.session_state.df_warehouse_ecom
             )
-            st.session_state.task_results.append(("Luân Chuyển Giữa Cửa Hàng", transfer_df))
+            normalize_core_dtypes()
+            st.session_state.task_results.append(("Luân Chuyển Giữa Cửa Hàng", sanitize_for_streamlit(transfer_df)))
             st.success("Đã luân chuyển hàng hóa!")
 
     # Bốc tồn từ kho tổng
@@ -186,16 +281,14 @@ if page == "Distribution Task":
                 filtered_df = filter_excluded_data(st.session_state.df_merge.copy(), excluded_stores, excluded_fdcode)
                 
                 # ✅ FIX: Truyền đầy đủ tham số, bao gồm df_warehouse_ecom
+                cfg = st.session_state.cfg_stock_from_wh
+
                 transfer_df = dt.stock_from_warehouse(
                     filtered_df=filtered_df,
                     df_warehouse=st.session_state.df_warehouse,
                     df_process_warehouse=st.session_state.df_process_warehouse,
-                    max_stock_normal_store=3,
-                    df_warehouse_ecom=st.session_state.df_warehouse_ecom,  # ✅ THÊM DÒNG NÀY
-                    ecom_min_stock=10,  # Mức ưu tiên
-                    ecom_max_stock=100, # Giới hạn cứng ✅
-                    allow_ecom_fallback_to_general=False,
-                    debug=False  # Tắt debug trong production, bật True nếu cần debug
+                    df_warehouse_ecom=st.session_state.get("df_warehouse_ecom", None),
+                    **cfg
                 )
                 
                 # ✅ Cập nhật cả df_warehouse_ecom sau khi transfer
@@ -209,8 +302,8 @@ if page == "Distribution Task":
                     st.session_state.df_process_warehouse,
                     st.session_state.df_warehouse_ecom  # ✅ THÊM THAM SỐ NÀY
                 )
-                
-                st.session_state.task_results.append(("Bốc Tồn Từ Kho Tổng", transfer_df))
+                normalize_core_dtypes()
+                st.session_state.task_results.append(("Bốc Tồn Từ Kho Tổng", sanitize_for_streamlit(transfer_df)))
                 st.success("Đã bốc tồn từ kho tổng!")
         else:
             st.error("Dữ liệu kho không hợp lệ. Vui lòng kiểm tra dữ liệu!")
@@ -225,7 +318,7 @@ if page == "Distribution Task":
                 st.error("File Excel phải chứa cột 'fdcode' và 'qty.")
             else:
                 st.write("Dữ liệu import:")
-                st.dataframe(imported_df)
+                st.dataframe(sanitize_for_streamlit(imported_df))
 
                 # Kiểm tra nếu dữ liệu tồn kho đã khởi tạo
                 if "df_merge" in st.session_state and not st.session_state.df_merge.empty:
@@ -241,10 +334,10 @@ if page == "Distribution Task":
                         transfer_df, st.session_state.df_merge = dt.allocate_import_to_stores(
                             imported_df, filtered_df_merge
                         )
-                        st.session_state.task_results.append(("Phân Bổ Từ Danh Sách Import", transfer_df))
+                        st.session_state.task_results.append(("Phân Bổ Từ Danh Sách Import", sanitize_for_streamlit(transfer_df)))
                         st.success("Đã phân bổ số lượng từ danh sách import!")
                         st.write("Kết quả phân bổ:")
-                        st.dataframe(transfer_df)
+                        st.dataframe(sanitize_for_streamlit(transfer_df))
                 else:
                     st.error("Dữ liệu tồn kho chưa được khởi tạo!")
         except Exception as e:
@@ -255,12 +348,12 @@ if page == "Distribution Task":
         st.subheader("Kết Quả Từng Thao Tác")
         for idx, (title, result_df) in enumerate(st.session_state.task_results):
             with st.expander(f"{title}"):
-                st.dataframe(result_df)
+                st.dataframe(sanitize_for_streamlit(result_df))
 
     # Hiển thị tồn kho hiện tại
     if "df_merge" in st.session_state and not st.session_state.df_merge.empty:
         st.subheader("Tồn Kho Hiện Tại")
-        st.dataframe(st.session_state.df_merge)
+        st.dataframe(sanitize_for_streamlit(st.session_state.df_merge))
 
     if "df_warehouse" in st.session_state and not st.session_state.df_warehouse.empty and \
     "df_process_warehouse" in st.session_state and not st.session_state.df_process_warehouse.empty:
@@ -269,12 +362,12 @@ if page == "Distribution Task":
         # Hiển thị Tồn Kho KHO TỔNG
         with col1:
             st.subheader("TỒN KHO TỔNG")
-            st.dataframe(st.session_state.df_warehouse)
+            st.dataframe(sanitize_for_streamlit(st.session_state.df_warehouse))
 
         # Hiển thị Tồn Kho KHO GIA CÔNG
         with col2:
             st.subheader("TỒN KHO GIA CÔNG")
-            st.dataframe(st.session_state.df_process_warehouse)
+            st.dataframe(sanitize_for_streamlit(st.session_state.df_process_warehouse))
     # So sánh tồn kho trước và sau
     if not st.session_state.df_merge_before.empty:
         st.subheader("So Sánh Tồn Kho Trước và Sau")
@@ -284,7 +377,7 @@ if page == "Distribution Task":
         df_comparison['% Thay Đổi'] = ((df_comparison['Sau'] - df_comparison['Trước']) / df_comparison['Trước'].replace(0, 1)) * 100
         df_comparison['% Thay Đổi'] = df_comparison['% Thay Đổi'].round(1)
         df_comparison = df_comparison.sort_values(by='% Thay Đổi', ascending=False)
-        st.dataframe(df_comparison)
+        st.dataframe(sanitize_for_streamlit(df_comparison))
 
     # Tạo cửa hàng mới
     if st.sidebar.button("Tạo Cửa Hàng Mới"):

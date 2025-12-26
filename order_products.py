@@ -36,7 +36,7 @@ connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}
 engine = create_engine(connection_string)
 
 def channel(code):
-    if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', 'ECOM HN', "KHO BOXME"):
+    if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', "KHO BOXME"):
         return 'ECOM'
     if code in ('KHO SỈ', 'KDS'):
         return 'KDS'

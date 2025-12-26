@@ -401,6 +401,8 @@ def initialize_data():
         'SC29',
         'SC39',
         'SC49',
+        'TUIRAS1',
+        'BANGKEO1',
 
         # =========================
         # NGỪNG BÁN
@@ -752,7 +754,7 @@ def stock_from_warehouse(
     max_stock_normal_store=3,
     df_warehouse_ecom=None,
     ecom_min_stock =10,
-    ecom_max_stock =100,
+    ecom_max_stock =200,
     allow_ecom_fallback_to_general=False,
     debug=True
 ):
@@ -1111,24 +1113,28 @@ def stock_from_warehouse(
             return 500 if is_ecom else 50
 
         # HOPGIAY theo size
-        if fd.startswith(("HOPGIAYS", "HOPGIAYL")):
+        if fd.startswith(("HOPGIAYS")):
             return 0 if is_ecom else 100
+        
+                # HOPGIAY theo size
+        if fd.startswith(("HOPGIAYL")):
+            return 1500 if is_ecom else 50
 
         if fd.startswith("HOPGIAYM"):
-            return 2000 if is_ecom else 200
+            return 3000 if is_ecom else 200
         
         if fd.startswith("HOPLIMAXNAM"):
-            return 1000 if is_ecom else 50
+            return 0 if is_ecom else 50
         
         if fd.startswith("HOPLIMAXNU"):
-            return 2000 if is_ecom else 100
+            return 0 if is_ecom else 100
 
         # TUIGIAY
         if fd.startswith("TUIGIAY"):
             return 0 if is_ecom else 200
         
         # TUINHUAM01
-        if fd.startswith(('TUINHUA','TUIRAS1')):
+        if fd.startswith(('TUINHUA')):
             return 0 if is_ecom else 3
         
         # GIẤY NẾN
