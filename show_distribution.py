@@ -161,10 +161,8 @@ def show_stock():
         df_stock = pd.read_sql_query(text(query_data), conn,)
     df_stock.replace({'ECOM2': 'ECOM',
                       'KHO BOXME': 'ECOM',
-                    'KHO SỈ':'KDS'}, inplace=True)
+                      'KHO SỈ':'KDS'}, inplace=True)
     df_stock = pd.merge(df_stock, df_products_template[['fdcode', 'default_code']], on='fdcode', how='left')
-    subcategory_none = ['BAGS', 'CHARM', 'KEY RING', 'UPPER', 'RASTACLAT']
-    df_stock = df_stock[~df_stock['category'].isin(subcategory_none)]
     worksheet_stock = sht.worksheet(SHEET1)
     worksheet_stock.clear()
     gd.set_with_dataframe(worksheet_stock, df_stock)
