@@ -228,7 +228,7 @@ combined_group = combined_df.groupby(['category', 'subcategory', 'default_code',
 combined_group['days_since_launch'] = (datetime.now() - combined_group['launch_date']).dt.days
 combined_group['avg_qty'] = combined_group.apply(
     lambda row: round(
-        ((row['qty'] / row['days_since_launch']) * 180)
+        ((row['qty'] / row['days_since_launch']) *(180 / 6))
         if row['days_since_launch'] <= 180
         else (row['qty'] / 6),
         1
@@ -401,7 +401,7 @@ df_fn_mer = df_fn_mer[df_fn_mer['type_products'].notna() & (df_fn_mer['type_prod
 
 df_fn_mer['discount_max'] = df_fn_mer['discount_max'].fillna(0)
 df_fn_mer = df_fn_mer[
-    (df_fn_mer['category'] != "") & 
+    (df_fn_mer['category'] != "") &
     (df_fn_mer['category'].notna()) &
     (df_fn_mer['subcategory'] != "BAGS") & 
     (df_fn_mer['subcategory'].notna())

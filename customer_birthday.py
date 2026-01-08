@@ -43,7 +43,7 @@ query_customers_birthday = """
     WHERE s.channelName = 'Kho Lẻ'
       AND s.customer_id IS NOT NULL
       AND s.customer_id NOT IN (108248129, 122951605)
-      AND MONTH(c.birthday) = 10
+      AND MONTH(c.birthday) = 1
     GROUP BY s.customer_id, c.name, c.mobile, c.birthday, st.code_nhanh
     ORDER BY last_purchase_date DESC;
 """

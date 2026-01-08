@@ -1106,7 +1106,7 @@ def stock_from_warehouse(
 
         # ✅ CHM* tối đa 10 (mọi store)
         if fd.startswith("CHM"):
-            return 10
+            return 30 if is_ecom else 5
 
         # ✅ HOPKID / HOPSUKID tối đa 50 (mọi store)
         if fd.startswith(("HOPKID", "HOPSUKEKID")):
@@ -1114,20 +1114,20 @@ def stock_from_warehouse(
 
         # HOPGIAY theo size
         if fd.startswith(("HOPGIAYS")):
-            return 0 if is_ecom else 100
+            return 0 if is_ecom else 30
         
                 # HOPGIAY theo size
         if fd.startswith(("HOPGIAYL")):
-            return 1500 if is_ecom else 50
+            return 3000 if is_ecom else 50
 
         if fd.startswith("HOPGIAYM"):
-            return 3000 if is_ecom else 200
+            return 3000 if is_ecom else 50
         
         if fd.startswith("HOPLIMAXNAM"):
             return 0 if is_ecom else 50
         
         if fd.startswith("HOPLIMAXNU"):
-            return 0 if is_ecom else 100
+            return 0 if is_ecom else 50
 
         # TUIGIAY
         if fd.startswith("TUIGIAY"):

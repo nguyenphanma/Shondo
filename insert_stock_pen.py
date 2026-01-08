@@ -9,8 +9,8 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-year ='2025'
-month ='12'
+year ='2026'
+month ='01'
 
 load_dotenv()
 
@@ -67,7 +67,7 @@ df_pending_stock_fix = df_pending_stock[1:].reset_index(drop=True)
 
 
 df_pending_stock_fix = df_pending_stock_fix[['KÊNH BÁN', 'DANH MỤC', 'DANH MỤC CON', 'MÃ SP CHA', 'SIZE', 'Mã hàng', 'ĐƠN ĐẶT HÀNG THÁNG', 'NĂM','SL ĐẶT', 'TỔNG TRẢ','SL CÒN NỢ\n(XƯỞNG)',
-                                             'SL TRẢ\nNĂM 2023-2024',
+                                             'SL TRẢ\nNĂM 2023-2025',
                                              'SL TRẢ T01',
                                              'SL TRẢ T02',
                                              'SL TRẢ T03',
@@ -81,7 +81,7 @@ df_pending_stock_fix = df_pending_stock_fix[['KÊNH BÁN', 'DANH MỤC', 'DANH M
                                              'SL TRẢ T11',
                                              'SL TRẢ T12'
                                              ]]
-cols_to_convert = ['SL ĐẶT', 'TỔNG TRẢ', 'SL CÒN NỢ\n(XƯỞNG)', 'SL TRẢ\nNĂM 2023-2024',
+cols_to_convert = ['SL ĐẶT', 'TỔNG TRẢ', 'SL CÒN NỢ\n(XƯỞNG)', 'SL TRẢ\nNĂM 2023-2025',
                                              'SL TRẢ T01',
                                              'SL TRẢ T02',
                                              'SL TRẢ T03',
@@ -112,7 +112,7 @@ df_pending_stock_fix.rename(columns={'SL CÒN NỢ\n(XƯỞNG)': 'order_pen',
                                         'ĐƠN ĐẶT HÀNG THÁNG':'month_ord',
                                         'NĂM':'year_ord',
                                         'SL ĐẶT': 'qty_ord',
-                                        'SL TRẢ\nNĂM 2023-2024':'delivered_old_year',
+                                        'SL TRẢ\nNĂM 2023-2025':'delivered_old_year',
                                         'SL TRẢ T01':'delivered_1',
                                         'SL TRẢ T02':'delivered_2',
                                         'SL TRẢ T03':'delivered_3',
