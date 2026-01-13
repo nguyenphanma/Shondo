@@ -325,78 +325,120 @@ combined_gr = combined_filter.groupby(['channel', 'category', 'subcategory', 'de
 
 # SALE THÁNG HIỆN TẠI
 query_sales_current = """
-    WITH pt AS (
-        SELECT 
-            ps.external_product_id,
-            ps.product_id,
-            ps.code AS default_code,
-            c1.name AS subcategory,
-            c2.name AS category
-        FROM categories c1
-        LEFT JOIN categories c2
-            ON c1.parent_id = c2.category_id
-        LEFT JOIN products ps 
-            ON ps.category_id = c1.external_category_id AND ps.parent_id = -2
-        WHERE c2.name IS NOT NULL
-        AND ps.parent_id IS NOT NULL
-    )
-    # sales order
+WITH pt AS (
     SELECT 
-        YEAR(so.createdDateTime) AS year,
-        MONTH(so.createdDateTime) AS month,
+        ps.external_product_id,
+        ps.product_id,
+        ps.code AS default_code,
+        c1.name AS subcategory,
+        c2.name AS category
+    FROM categories c1
+    LEFT JOIN categories c2
+        ON c1.parent_id = c2.category_id
+    LEFT JOIN products ps 
+        ON ps.category_id = c1.external_category_id AND ps.parent_id = -2
+    WHERE c2.name IS NOT NULL
+      AND ps.parent_id IS NOT NULL
+),
+filtered_orders AS (
+    SELECT 
+        so.orderId,
+        so.createdDateTime,
+        so.channelName,
+        so.saleChannel,
+        so.channel,
+        so.relatedBillId,
+        so.type,
+        so.status,
+        so.description,
+        so.customer_id,
+        so.shopOrderId,
+        so.privateDescription,
+        so.depotId,
+        so.usedPointsMoney
+    FROM sale_order so
+    WHERE so.status NOT IN ('Canceled', 'Returning', 'Failed','Returned', 'Aborted', 'CarrierCanceled', 'ConfirmReturned')
+      AND so.type != 'Khách trả lại hàng'
+      AND NOT (
+            so.privateDescription LIKE '%MDX%'
+            AND so.saleChannel IN (1, 2, 10, 20, 21, 46)
+            AND so.channelName != 'Kho Lẻ'
+      )
+      AND (
+          DATE(so.createdDateTime) BETWEEN DATE_FORMAT(CURDATE(), '%Y-01-01')
+                                  AND CURDATE() - INTERVAL 1 DAY
+       OR DATE(so.createdDateTime) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
+                                  AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
+      )
+),
+base AS (
+    SELECT 
+        YEAR(fo.createdDateTime)  AS year,
+        MONTH(fo.createdDateTime) AS month,
+
         CASE 
             WHEN st.code_nhanh = 'KHO XUẤT' THEN 'DT KHÁC'
-            WHEN so.channelName ='Kho Lẻ' THEN 'KDC'
-            WHEN  st.code_nhanh = 'KHO SỈ' THEN 'KDS'
-            WHEN so.saleChannel IN(1, 2, 10, 20, 21, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51) THEN 'ECOM' 
-            ELSE 'DT KHÁC' END channel,
+            WHEN fo.channelName = 'Kho Lẻ' THEN 'KDC'
+            WHEN st.code_nhanh = 'KHO SỈ' THEN 'KDS'
+            WHEN fo.saleChannel IN (1,2,10,20,21,41,42,43,45,46,47,48,49,50,51) THEN 'ECOM'
+            ELSE 'DT KHÁC'
+        END AS channel,
+
+        UPPER(
+            CASE 
+                WHEN sc.sale_channel_name = 'Admin' AND st.code_nhanh = 'KHO SỈ' THEN 'KDS'
+                WHEN st.code_nhanh = 'KHO XUẤT' THEN 'DT KHÁC'
+                WHEN fo.channelName = 'KHO LẺ' THEN st.code_nhanh
+                WHEN fo.saleChannel IN (2,10) THEN 'WEB'
+                WHEN fo.saleChannel IN (1,20,21,46) THEN 'FB/INS/ZL/NB'
+                WHEN fo.saleChannel = 41 THEN 'LAZADA'
+                WHEN fo.saleChannel = 42 THEN 'SHOPEE'
+                WHEN fo.saleChannel = 48 THEN 'TIKTOK'
+                ELSE 'KHO LỖI'
+            END
+        ) AS store,
+
+        CASE WHEN pt.category    IS NULL THEN 'BAGS' ELSE pt.category    END AS category,
+        CASE WHEN pt.subcategory IS NULL THEN 'BAGS' ELSE pt.subcategory END AS subcategory,
+        CASE WHEN pt.default_code IS NULL THEN ps2.code ELSE pt.default_code END AS default_code,
+
         CASE 
-            WHEN pt.category IS NULL THEN 'BAGS' 
-            ELSE pt.category END category,
-        CASE 
-            WHEN pt.subcategory IS NULL THEN 'BAGS' 
-            ELSE pt.subcategory END subcategory,
-        COALESCE(pt.default_code, ps2.code) AS default_code,
-        SUM(CASE 
-            WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN -soi.quantity 
-            ELSE soi.quantity END) qty,
-        SUM(CASE
-            WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN  -((soi.price * soi.quantity) - (soi.quantity * soi.discount)) 
-            WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) - soi.discount 
-        ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity) END) rvn
-    FROM sale_order so
-    LEFT JOIN sale_order_items soi 
-        ON so.orderId = soi.sale_order_id
-    LEFT JOIN products ps2
-        ON ps2.external_product_id = soi.external_product_id
-    LEFT JOIN pt
-        ON pt.external_product_id = ps2.parent_id
-    LEFT JOIN stores st 
-        ON st.depot_id_nhanh = so.depotId
-    LEFT JOIN customers cus
-        ON cus.external_customer_id = so.customer_id
-    LEFT JOIN sale_channel sc
-        ON sc.id = so.channel
-    WHERE 
-        so.status NOT IN ('Canceled', 'Returning', 'Failed','Returned', 'Aborted', 'CarrierCanceled', 'ConfirmReturned')
-        AND so.type != 'Khách trả lại hàng'
-        AND NOT (
-        so.privateDescription LIKE '%MDX%'
-        AND (
-            so.saleChannel IN (1, 2, 10, 20, 21, 46)
-            AND so.channelName != 'Kho Lẻ'
-            AND st.code_nhanh != 'KHO SỈ'
-            )
-        )
-        AND YEAR(so.createdDateTime) >= '2024'
-        AND MONTH(so.createdDateTime) >= '07'
-    GROUP BY
-        year,
-        month,
-        channel,
-        category,
-        subcategory,
-        default_code
+            WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' THEN -soi.quantity 
+            ELSE soi.quantity
+        END AS qty,
+
+        CASE
+            WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' 
+                THEN -((soi.price * soi.quantity) - (soi.discount * soi.quantity)) 
+            WHEN fo.channelName = 'Kho Lẻ' 
+                THEN (soi.price * soi.quantity) - soi.discount - fo.usedPointsMoney
+            ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity)
+        END AS rvn,
+
+        fo.channelName
+    FROM filtered_orders fo
+    LEFT JOIN sale_order_items soi ON fo.orderId = soi.sale_order_id
+    LEFT JOIN products ps2 ON ps2.external_product_id = soi.external_product_id
+    LEFT JOIN pt ON pt.external_product_id = ps2.parent_id
+    LEFT JOIN stores st ON st.depot_id_nhanh = fo.depotId
+    LEFT JOIN sale_channel sc ON sc.id = fo.channel
+)
+SELECT
+    year,
+    month,
+    channel,
+    category,
+    subcategory,
+    default_code,
+    SUM(qty) AS qty,
+    SUM(rvn) AS rvn
+FROM base
+WHERE
+    store NOT IN ('TIKTOK', 'SHOPEE')
+    AND NOT (store = 'WEB' AND channelName <> 'Kho Lẻ')
+GROUP BY
+    year, month, channel, category, subcategory, default_code;
+
 """
 
 # Lấy dữ liệu bán hàng từ database
@@ -420,9 +462,17 @@ FROM ecommerce_orders eo
 JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
 JOIN order_source os ON eo.order_source_id = os.id
 WHERE
-	YEAR(eo.order_date) >='2025'
-    AND MONTH(eo.order_date) >='10'
-    AND eo.status NOT IN ('cancelled', 'returned')
+    (
+        DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE(), '%Y-01-01')
+                               AND (CURDATE() - INTERVAL 1 DAY)
+        OR
+        DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
+                               AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
+    )
+    AND eoi.product_sku NOT LIKE '%HOP%'
+    AND eoi.product_sku NOT LIKE '%TUIRUT%'
+    AND eoi.product_sku <> 'LIMAXCARD'
+    AND eo.status <> 'cancelled';
 """
 
 # Lấy dữ liệu bán hàng từ database

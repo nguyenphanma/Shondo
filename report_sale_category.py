@@ -407,6 +407,51 @@ df_fn_mer = df_fn_mer[
     (df_fn_mer['subcategory'].notna())
 ]
 
+df_fn_mer_dps = df_fn_mer[['category', 'subcategory', 'default_code', 'Suggested Discount']].copy()
+
+# ✅ Rename đúng
+df_fn_mer_dps.rename(columns={'Suggested Discount': 'suggested_discount'}, inplace=True)
+
+with engine.connect() as conn:
+    # 1) Tạo bảng nếu chưa tồn tại
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS fn_mer_suggested_discount (
+            category VARCHAR(100),
+            subcategory VARCHAR(100),
+            default_code VARCHAR(50),
+            suggested_discount DECIMAL(10,2)
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    """))
+
+    # 2) Xóa toàn bộ dữ liệu cũ
+    conn.execute(text("DELETE FROM fn_mer_suggested_discount;"))
+
+    # 3) Insert dữ liệu mới
+    insert_sql = text("""
+        INSERT INTO fn_mer_suggested_discount
+            (category, subcategory, default_code, suggested_discount)
+        VALUES
+            (:category, :subcategory, :default_code, :suggested_discount)
+    """)
+
+    # Chuẩn hóa data để insert
+    df_insert = df_fn_mer_dps.copy()
+
+    # (Optional) strip để tránh tên cột dính space lạ
+    df_insert.columns = df_insert.columns.str.strip()
+
+    df_insert['suggested_discount'] = (
+        df_insert['suggested_discount']
+        .fillna(0)
+        .astype(float)
+        .round(2)
+    )
+
+    data = df_insert.to_dict(orient="records")
+
+    conn.execute(insert_sql, data)
+    conn.commit()
+   
 worksheet_sale = sht.worksheet(SHEET1)
 worksheet_sale.batch_clear(['A1:S'])
 gd.set_with_dataframe(worksheet_sale, df_fn_mer)
