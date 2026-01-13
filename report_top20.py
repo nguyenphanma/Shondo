@@ -326,7 +326,7 @@ def main():
         JOIN order_source os ON eo.order_source_id = os.id
         WHERE
             DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
-            AND eo.status NOT IN ('cancelled', 'returned')
+            AND eo.status NOT IN ('cancelled', 'returned', 'Hủy bởi khách hàng')
         GROUP BY store,
                 fdcode
     """
