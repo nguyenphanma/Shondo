@@ -128,7 +128,7 @@ filtered_orders AS (
         so.depotId,
         so.usedPointsMoney
     FROM sale_order so
-    WHERE so.status NOT IN ('Canceled', 'Returning', 'Failed','Returned', 'Aborted', 'CarrierCanceled', 'ConfirmReturned')
+    WHERE so.status = 'Success'
       AND so.type != 'Khách trả lại hàng'
       AND NOT (
             so.privateDescription LIKE '%MDX%'
@@ -136,10 +136,7 @@ filtered_orders AS (
             AND so.channelName != 'Kho Lẻ'
       )
       AND (
-          DATE(so.createdDateTime) BETWEEN DATE_FORMAT(CURDATE(), '%Y-01-01')
-                                  AND CURDATE() - INTERVAL 1 DAY
-       OR DATE(so.createdDateTime) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
-                                  AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
+          YEAR(so.createdDateTime) >= '2026'
       )
 ),
 base AS (
@@ -181,41 +178,6 @@ base AS (
                 THEN (soi.price * soi.quantity) - soi.discount - fo.usedPointsMoney
             ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity)
         END AS rvn,
-        CASE
-            WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' 
-                THEN -(soi.price * soi.quantity)
-            WHEN fo.channelName = 'Kho Lẻ' 
-                THEN (soi.price * soi.quantity)
-            WHEN st.code_nhanh = 'KHO SỈ'
-                THEN (ps2.price * soi.quantity)
-            ELSE (soi.price * soi.quantity)
-        END AS rvn_tag,
-        CASE
-            WHEN (fo.shopOrderId IS NOT NULL AND fo.shopOrderId != 0)
-                 AND fo.channelName = 'Kho Lẻ' THEN 'ord web nhận tại store'
-            ELSE fo.type
-        END AS purchase_method,
-        CASE
-            WHEN DATEDIFF(fo.createdDateTime, ps2.launch_date) <= 90 THEN 'SP MỚI'
-            ELSE 'SP CŨ'
-        END AS type_products,
-        CASE 
-            WHEN fo.description LIKE '%THHT%' THEN 'Return and Refund' 
-            WHEN fo.description LIKE '%GIAO HÀNG MỘT PHẦN%' THEN 'Return and Refund'
-            ELSE fo.status
-        END AS status,
-        TIMESTAMPDIFF(YEAR, cus.birthday, CURRENT_DATE()) AS age,
-        CASE WHEN cus.gender IS NULL THEN 'unknow' ELSE cus.gender END AS gender,
-        CASE WHEN cus.level IS NULL THEN 'Non-member' ELSE cus.level END AS level,
-        CASE 
-            WHEN DATE(cus.started_date) = DATE(fo.createdDateTime) THEN 'KH MỚI'
-            WHEN DATE(cus.started_date) <= DATE(fo.createdDateTime) THEN 'KH CŨ'
-            ELSE 'KHVL'
-        END AS type_customer,
-        CASE 
-            WHEN cus.customer_id IS NULL THEN fo.orderId
-            ELSE cus.customer_id
-        END AS customer,
         fo.saleChannel,
         fo.channelName
     FROM filtered_orders fo
@@ -230,16 +192,121 @@ SELECT *
 FROM base
 WHERE
     -- Loại TIKTOK/SHOPEE luôn
-    store NOT IN ('TIKTOK', 'SHOPEE')
+    store NOT IN ('TIKTOK', 'SHOPEE', 'ECOM SG')
     -- Loại WEB nhưng GIỮ KDC: chỉ loại WEB khi không phải "Kho Lẻ"
+    AND NOT (store = 'WEB' AND channelName <> 'Kho Lẻ');     
+"""
+
+# Lấy dữ liệu bán hàng từ database
+with engine.connect() as conn:
+    current_df_2026 = pd.read_sql_query(text(query_sales_current), conn)
+print('Finished query the sale')
+
+# SALSE 2024
+# Số lượng đã bán tháng hiện tại
+query_sales_2024= f"""
+    WITH pt AS (
+        SELECT 
+            ps.external_product_id,
+            ps.product_id,
+            ps.code AS default_code,
+            c1.name AS subcategory,
+            c2.name AS category
+        FROM categories c1
+        LEFT JOIN categories c2
+            ON c1.parent_id = c2.category_id
+        LEFT JOIN products ps 
+            ON ps.category_id = c1.external_category_id AND ps.parent_id = -2
+        WHERE c2.name IS NOT NULL
+        AND ps.parent_id IS NOT NULL
+    ),
+    filtered_orders AS (
+        SELECT 
+            so.orderId,
+            so.createdDateTime,
+            so.channelName,
+            so.saleChannel,
+            so.channel,
+            so.relatedBillId,
+            so.type,
+            so.status,
+            so.description,
+            so.customer_id,
+            so.shopOrderId,
+            so.privateDescription,
+            so.depotId,
+            so.usedPointsMoney
+        FROM sale_order so
+        WHERE so.status = 'Success'
+        AND so.type != 'Khách trả lại hàng'
+        AND NOT (
+                so.privateDescription LIKE '%MDX%'
+                AND so.saleChannel IN (1, 2, 10, 20, 21, 46)
+                AND so.channelName != 'Kho Lẻ'
+        )
+        AND YEAR(so.createdDateTime) BETWEEN 2024 AND 2025
+    ),
+    base AS (
+        SELECT 
+            fo.orderId AS order_id,
+            DATE(fo.createdDateTime) AS date_order,
+            YEAR(fo.createdDateTime) AS order_year,
+            CASE 
+                WHEN st.code_nhanh = 'KHO XUẤT' THEN 'DT KHÁC'
+                WHEN fo.channelName = 'Kho Lẻ' THEN 'KDC'
+                WHEN st.code_nhanh = 'KHO SỈ' THEN 'KDS'
+                WHEN fo.saleChannel IN (1,2,10,20,21,41,42,43,45,46,47,48,49,50,51) THEN 'ECOM'
+                ELSE 'DT KHÁC'
+            END AS channel,
+            UPPER(
+                CASE 
+                    WHEN sc.sale_channel_name = 'Admin' AND st.code_nhanh = 'KHO SỈ' THEN 'KDS'
+                    WHEN st.code_nhanh = 'KHO XUẤT' THEN 'DT KHÁC'
+                    WHEN fo.channelName = 'KHO LẺ' THEN st.code_nhanh
+                    WHEN fo.saleChannel IN (2,10) THEN 'WEB'
+                    WHEN fo.saleChannel IN (1,20,21,46) THEN 'FB/INS/ZL/NB'
+                    WHEN fo.saleChannel = 41 THEN 'LAZADA'
+                    WHEN fo.saleChannel = 42 THEN 'SHOPEE'
+                    WHEN fo.saleChannel = 48 THEN 'TIKTOK'
+                    ELSE 'KHO LỖI'
+                END
+            ) AS store,
+            CASE WHEN pt.category IS NULL THEN 'BAGS' ELSE pt.category END AS category,
+            CASE WHEN pt.subcategory IS NULL THEN 'BAGS' ELSE pt.subcategory END AS subcategory,
+            ps2.code AS fdcode,
+            CASE WHEN pt.default_code IS NULL THEN ps2.code ELSE pt.default_code END AS default_code,
+            CASE 
+                WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' THEN -soi.quantity 
+                ELSE soi.quantity
+            END AS qty,
+            CASE
+                WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' 
+                    THEN -((soi.price * soi.quantity) - (soi.discount * soi.quantity)) 
+                WHEN fo.channelName = 'Kho Lẻ' 
+                    THEN (soi.price * soi.quantity) - soi.discount - fo.usedPointsMoney
+                ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity)
+            END AS rvn,
+            fo.saleChannel,
+            fo.channelName
+        FROM filtered_orders fo
+        LEFT JOIN sale_order_items soi ON fo.orderId = soi.sale_order_id
+        LEFT JOIN products ps2 ON ps2.external_product_id = soi.external_product_id
+        LEFT JOIN pt ON pt.external_product_id = ps2.parent_id
+        LEFT JOIN stores st ON st.depot_id_nhanh = fo.depotId
+        LEFT JOIN customers cus ON cus.external_customer_id = fo.customer_id
+        LEFT JOIN sale_channel sc ON sc.id = fo.channel
+    )
+    SELECT *
+    FROM base
+    WHERE (order_year = 2024 OR (order_year = 2025 AND store NOT IN ('TIKTOK', 'SHOPEE')))
     AND NOT (store = 'WEB' AND channelName <> 'Kho Lẻ');
 """
 
 # Lấy dữ liệu bán hàng từ database
 with engine.connect() as conn:
-    current_df = pd.read_sql_query(text(query_sales_current), conn)
-print('Finished query the sale')
-
+    current_df_2024 = pd.read_sql_query(text(query_sales_2024), conn)
+print('Finished query the sale 2024')
+current_df = pd.concat([current_df_2024, current_df_2026], ignore_index=True)
 current_df['date_order'] = pd.to_datetime(current_df['date_order'])
 
 current_df['month'] = current_df['date_order'].dt.month
@@ -268,8 +335,8 @@ engine_ecom = create_engine(
     connect_args={"connect_timeout": 30}  # tăng timeout từ mặc định (~10s) lên 20s
 )
 
-
-query_sales_ecom = f"""
+# ECOM 2024
+query_sales_ecom_2024 = f"""
 SELECT
 	DATE(eo.order_date) date_ord,
     SUBSTRING_INDEX(eo.order_id, '_', -1) AS order_id_clean,
@@ -286,13 +353,7 @@ FROM ecommerce_orders eo
 JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
 JOIN order_source os ON eo.order_source_id = os.id
 WHERE
-    (
-        DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE(), '%Y-01-01')
-                               AND (CURDATE() - INTERVAL 1 DAY)
-        OR
-        DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
-                               AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
-    )
+    YEAR(eo.order_date) BETWEEN 2024 AND 2025
     AND eoi.product_sku NOT LIKE '%HOP%'
     AND eoi.product_sku NOT LIKE '%TUIRUT%'
     AND eoi.product_sku <> 'LIMAXCARD'
@@ -301,9 +362,40 @@ WHERE
 
 # Lấy dữ liệu bán hàng từ database
 with engine_ecom.connect() as conn:
-    combined_df_ecom = pd.read_sql_query(text(query_sales_ecom), conn)
-print("query sale_ecom 90 day finished.")
+    combined_df_ecom_2024 = pd.read_sql_query(text(query_sales_ecom_2024), conn)
+print("query sale_ecom 2024 day finished.")
 
+# ECOM 2024
+query_sales_ecom_2026 = f"""
+SELECT
+	DATE(eo.order_date) date_ord,
+    SUBSTRING_INDEX(eo.order_id, '_', -1) AS order_id_clean,
+	"ECOM" as channel,
+    CASE 
+        WHEN UPPER(os.name) = 'FACEBOOK' THEN 'FB/INS/ZL/NB'
+        WHEN UPPER(os.name) = 'TIKTOKSHOP' THEN 'TIKTOK'
+        ELSE UPPER(os.name) 
+    END AS store,
+    eoi.product_sku fdcode,
+    eoi.quantity qty,
+    eoi.price * eoi.quantity as rvn
+FROM ecommerce_orders eo
+JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
+JOIN order_source os ON eo.order_source_id = os.id
+WHERE
+    YEAR(eo.order_date) = '2026'
+    AND eoi.product_sku NOT LIKE '%HOP%'
+    AND eoi.product_sku NOT LIKE '%TUIRUT%'
+    AND eoi.product_sku <> 'LIMAXCARD'
+    AND eo.status NOT IN('cancelled', 'returned');
+"""
+
+# Lấy dữ liệu bán hàng từ database
+with engine_ecom.connect() as conn:
+    combined_df_ecom_2026 = pd.read_sql_query(text(query_sales_ecom_2026), conn)
+print("query sale_ecom 2024 day finished.")
+
+combined_df_ecom = pd.concat([combined_df_ecom_2024, combined_df_ecom_2026], ignore_index=True)
 combined_df_ecom = combined_df_ecom[combined_df_ecom['fdcode'] != ""]
 
 combined_df_ecom_mer = pd.merge(combined_df_ecom, df_template_fix[['fdcode', 'default_code', 

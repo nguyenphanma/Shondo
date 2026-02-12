@@ -44,7 +44,7 @@ query_customers = """
     WHERE s.channelName = 'Kho Lẻ'
     AND s.customer_id NOT IN (108248129, 122951605)
     AND s.customer_id IS NOT NULL
-    AND MONTH(c.birthday) = 12
+    AND MONTH(c.birthday) = 2
     GROUP BY s.customer_id, 
             c.name, 
             c.mobile, 

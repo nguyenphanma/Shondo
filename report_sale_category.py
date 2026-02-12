@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from sqlalchemy import create_engine, text
 import gspread
@@ -179,35 +180,43 @@ df_stock['channel'] = df_stock['store'].apply(channel)
 
 # SALE 3 THÁNG GẦN NHẤT
 query_sales_180_days = """
-    SELECT 
-        CASE 
-            WHEN so.channelName = 'Kho Lẻ' THEN 'KDC'
-            WHEN st.code_nhanh = 'KHO SỈ' THEN 'KDS'
-            WHEN so.saleChannel IN (1, 2, 10, 20, 21, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51) THEN 'ECOM' 
-            ELSE 'DT KHÁC' 
-        END AS channel,
-        ps2.code fdcode,
-        CASE 
-            WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN -soi.quantity
-            ELSE soi.quantity
-        END AS qty,
-        CASE
-                WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN  -((soi.price * soi.quantity) - (soi.quantity * soi.discount)) 
-                WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) - soi.discount 
-                ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity) END as rvn,
-        soi.discount,
-        ps2.launch_date,
-        ps2.price price_retail
-    FROM sale_order so
-    LEFT JOIN sale_order_items soi 
-        ON so.orderId = soi.sale_order_id
-    LEFT JOIN products ps2
-        ON ps2.external_product_id = soi.external_product_id
-    LEFT JOIN stores st 
-        ON st.depot_id_nhanh = so.depotId
-    WHERE 
-        so.status = 'Success'
-        AND DATE(so.createdDateTime) >= CURRENT_DATE() - INTERVAL 180 DAY
+    WITH base AS (
+        SELECT 
+            CASE 
+                WHEN so.channelName = 'Kho Lẻ' THEN 'KDC'
+                WHEN st.code_nhanh = 'KHO SỈ' THEN 'KDS'
+                WHEN so.saleChannel IN (1, 2, 10, 20, 21, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51) THEN 'ECOM' 
+                ELSE 'DT KHÁC' 
+            END AS channel,
+            ps2.code fdcode,
+            CASE 
+                WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN -soi.quantity
+                ELSE soi.quantity
+            END AS qty,
+            CASE
+                WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' 
+                    THEN -((soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.quantity * soi.discount)) 
+                WHEN so.channelName ='Kho Lẻ' 
+                    THEN (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - soi.discount 
+                ELSE (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.discount * soi.quantity) 
+            END AS rvn,
+            soi.discount,
+            ps2.launch_date,
+            ps2.price AS price_retail
+        FROM sale_order so
+        LEFT JOIN sale_order_items soi 
+            ON so.orderId = soi.sale_order_id
+        LEFT JOIN products ps2
+            ON ps2.external_product_id = soi.external_product_id
+        LEFT JOIN stores st 
+            ON st.depot_id_nhanh = so.depotId
+        WHERE 
+            so.status = 'Success'
+            AND DATE(so.createdDateTime) >= CURRENT_DATE() - INTERVAL 180 DAY
+    )
+    SELECT *
+    FROM base
+    WHERE channel <> 'ECOM';
     """
 
 # Lấy dữ liệu bán hàng từ database
@@ -238,6 +247,109 @@ combined_group['avg_qty'] = combined_group.apply(
 combined_group['month_launch'] = round(combined_group['days_since_launch']/30,1)
 combined_group.drop(columns=['launch_date', 'days_since_launch'], inplace=True)
 combined_group = combined_group[combined_group['category'].isin(["SANDALS", "SLIDES", "KID SANDALS", "SNEAKERS", "KID SNEAKERS", "BAGS", "HATS"])]
+
+# SALE 3 THÁNG GẦN NHẤT ECOM
+# SALE ECOM 3 THÁNG GẦN NHẤT
+# Lấy thông tin từ biến môi trường
+host_ecom = os.getenv("DB_HOST_ECOM")
+user_ecom = os.getenv("DB_USER_ECOM")
+password_ecom = os.getenv("DB_PASSWORD_ECOM")
+database_ecom = os.getenv("DB_NAME_ECOM")
+port_ecom = os.getenv("DB_PORT_ECOM", 3306)
+
+# Kết nối MySQL
+connection_string_ecom = f"mysql+pymysql://{user_ecom}:{password_ecom}@{host_ecom}:{port_ecom}/{database_ecom}"
+
+# Thêm pool_pre_ping=True và connect_args để tăng thời gian chờ
+engine_ecom = create_engine(
+    connection_string_ecom,
+    pool_pre_ping=True,
+    connect_args={"connect_timeout": 30}  # tăng timeout từ mặc định (~10s) lên 20s
+)
+
+
+query_sales_90_days_ecom = """
+    SELECT
+        "ECOM" as store,
+        eoi.product_sku fdcode,
+        SUM(eoi.quantity) qty,
+        SUM(eoi.price * eoi.quantity) as rvn
+    FROM ecommerce_orders eo
+    JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
+    JOIN order_source os ON eo.order_source_id = os.id
+    WHERE
+        DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 180 DAY
+        AND eo.status NOT IN ('cancelled', 'returned', 'Hủy bởi khách hàng')
+    GROUP BY store,
+            fdcode
+"""
+
+# Lấy dữ liệu bán hàng từ database
+with engine_ecom.connect() as conn:
+    combined_df_ecom = pd.read_sql_query(text(query_sales_90_days_ecom), conn)
+print("query sale_ecom 180 day finished.")
+
+combined_df_ecom_ft = combined_df_ecom[combined_df_ecom['fdcode'] != "" ]
+
+combined_df_ecom_ft['fdcode'] = combined_df_ecom_ft['fdcode'].str.upper()
+df_template_fix['fdcode'] = df_template_fix['fdcode'].str.upper()
+
+combined_df_ecom_merge = pd.merge(
+    combined_df_ecom_ft,
+    df_template_fix[['fdcode', 'default_code', 'category', 'subcategory', 'launch_date']],
+    on='fdcode',
+    how='left'
+)
+
+combined_df_ecom_merge_ft = combined_df_ecom_merge[combined_df_ecom_merge['category'].isin(["SANDALS", "SLIDES", "KID SANDALS", "SNEAKERS", "KID SNEAKERS", "BAGS", "HATS"])]
+
+df = combined_df_ecom_merge_ft.copy()
+
+# Đảm bảo launch_date là datetime (an toàn nếu cột đang là string)
+df['launch_date'] = pd.to_datetime(df['launch_date'], errors='coerce')
+
+# Chọn keys nhóm giống logic gộp đầu ra (giữ theo channel + fdcode; 
+# nếu bạn muốn chi tiết hơn có thể thêm 'default_code','category','subcategory')
+keys = ['store', 'fdcode']
+
+# Tổng qty theo nhóm và launch_date nhỏ nhất theo nhóm
+total_qty = df.groupby(keys)['qty'].transform('sum')
+min_launch = df.groupby(keys)['launch_date'].transform('min')
+
+# Số ngày kể từ launch đến hôm nay (tránh chia 0)
+today = pd.Timestamp.today().normalize()
+days_since_launch = (today - min_launch).dt.days.clip(lower=1)
+
+# avg_qty theo công thức:
+# nếu days_since_launch <= 90:
+#   avg_qty = total_qty / days_since_launch * 90 / 3
+# else:
+#   avg_qty = total_qty / 3
+avg_qty = np.where(
+    days_since_launch <= 180,
+    total_qty / days_since_launch * 90 / 6,
+    total_qty / 6
+)
+
+df['avg_qty'] = np.round(avg_qty, 1)
+
+# Gán ngược lại vào dataframe chính (hoặc dùng df ở dưới cho tiếp tục xử lý)
+combined_df_ecom_merge_ft = df
+combined_df_ecom_merge_ft['channel'] = combined_df_ecom_merge_ft['store'].apply(channel)
+combined_df_ecom_merge_fn = combined_df_ecom_merge_ft[['category', 'subcategory', 'default_code','qty', 'rvn', 'avg_qty']]
+
+df_sale_total = pd.concat([combined_group, combined_df_ecom_merge_fn], ignore_index=True)
+
+combined_gr = df_sale_total.groupby(['category', 'subcategory', 'default_code', 'month_launch', 'price_retail']).agg({
+    'rvn':'sum',
+    'qty':'sum',
+    'avg_qty':'sum'
+}).reset_index()
+
+combined_gr_ft = combined_gr[
+    (combined_gr['category'] != 'BAGS') &
+    (combined_gr['subcategory'] != 'BAGS')
+]
 
 df_stock = pd.merge(df_stock, df_template_fix[['fdcode', 'default_code']], on='fdcode', how='left')
 
@@ -286,13 +398,13 @@ def type_product(code):
         return 'S'
     if code not in df_ctl['default_code'].values:
         return 'Q'
-    if code not in combined_group['default_code'].values:
+    if code not in combined_gr_ft['default_code'].values:
         return 'C'
     return 'Q'
 
 df_stock_pivot['type_products'] = df_stock_pivot['default_code'].apply(type_product)
 
-df_fn = pd.merge(combined_group, df_stock_pivot[['default_code', 'ECOM', 'KDC', 'KDS', 'total_stock', 'order_pen', 'type_kds', 'type_products']], on='default_code', how='outer').fillna(0)
+df_fn = pd.merge(combined_gr_ft, df_stock_pivot[['default_code', 'ECOM', 'KDC', 'KDS', 'total_stock', 'order_pen', 'type_kds', 'type_products']], on='default_code', how='outer').fillna(0)
 
 df_fn['hst'] = df_fn.apply(lambda row: round(row['total_stock'] / row['avg_qty'], 1) 
                            if row['avg_qty'] != 0 else 0, axis=1)

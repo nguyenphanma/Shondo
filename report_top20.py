@@ -235,6 +235,7 @@ def main():
                 ps2.code fdcode,
                 soi.quantity,
                 soi.price,
+                soi.vat,
                 soi.discount,
                 so.relatedBillId,
                 so.saleChannel,
@@ -263,9 +264,9 @@ def main():
             fdcode,
             default_code,
             SUM(CASE
-                    WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN  -((price * quantity) - (quantity * discount)) 
-                    WHEN channelName ='Kho Lẻ' THEN (price * quantity) - discount 
-            ELSE (price * quantity) - (discount * quantity) END) rvn,
+                    WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN  -((price * quantity) + (quantity * COALESCE(vat,0)) - (quantity * discount)) 
+                    WHEN channelName ='Kho Lẻ' THEN (price * quantity) + quantity * COALESCE(vat,0) - discount 
+            ELSE (price * quantity) + quantity * COALESCE(vat,0) - (discount * quantity) END) rvn,
             SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END) AS qty,
             ROUND(
                 CASE 
@@ -277,7 +278,7 @@ def main():
                 END, 1
             ) AS avg_qty
         FROM main_data
-        WHERE store != 'ECOM'
+        WHERE store NOT IN('ECOM', 'ECOM SG')
         GROUP BY 
             store,
             category,
@@ -424,7 +425,7 @@ def main():
         FROM inventory_movement_items imi
         LEFT JOIN inventory_movements im ON im.id = imi.movement_id
         WHERE im.depot_id = 442102
-        AND im.status NOT IN ('Cancel', 'Completed')
+        AND im.status NOT IN ('Cancel', 'Completed', 'Huỷ bởi khách hàng')
     """
 
     # Lấy dữ liệu bán hàng từ database

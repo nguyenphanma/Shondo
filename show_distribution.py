@@ -99,7 +99,7 @@ def show_stock():
                             depot_id, 
                             MAX(changed_at) AS max_changed_at
                         FROM product_inventory_history
-                        WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633)
+                        WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 222877)
                         GROUP BY product_id, depot_id
                     ),
 
@@ -119,7 +119,7 @@ def show_stock():
                         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
                         WHERE 
                             pih.available >= 1
-                            AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633)
+                            AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 222877)
                             AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
                     ),
 

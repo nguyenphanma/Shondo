@@ -251,8 +251,8 @@ query_sales_current = f"""
                 SUM(
                     CASE
                         WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN  -((soi.price * soi.quantity) - (soi.quantity * soi.discount)) 
-                        WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) - soi.discount 
-                        ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity) END
+                        WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - soi.discount 
+                        ELSE (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.discount * soi.quantity) END
                 ) AS rvn,
 
                 ps2.price,
@@ -261,9 +261,9 @@ query_sales_current = f"""
                 CASE
                     WHEN SUM(
                             CASE
-                                WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN  -((soi.price * soi.quantity) - (soi.quantity * soi.discount)) 
-                                WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) - soi.discount 
-                            ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity) END
+                                WHEN so.relatedBillId IS NOT NULL AND TRIM(so.relatedBillId) != '' THEN  -((soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.quantity * soi.discount)) 
+                                WHEN so.channelName ='Kho Lẻ' THEN (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - soi.discount 
+                            ELSE (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.discount * soi.quantity) END
                         ) < SUM(ps2.price * soi.quantity)
                     THEN 'Giảm giá'
                     ELSE 'Nguyên giá'
@@ -277,7 +277,7 @@ query_sales_current = f"""
             LEFT JOIN customers cus ON cus.external_customer_id = so.customer_id
             LEFT JOIN sale_channel sc ON sc.id = so.channel
             WHERE 
-                st.code_nhanh != 'KHO SỈ'
+                st.code_nhanh NOT IN ('KHO SỈ', 'ECOM SG')
                 AND so.status NOT IN ('Canceled', 'Returning', 'Failed', 'Returned', 'Aborted', 'CarrierCanceled', 'ConfirmReturned')
 				AND (
 					(DATE(so.createdDateTime) BETWEEN DATE('{date_start}') AND DATE('{date_end}'))

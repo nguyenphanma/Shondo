@@ -409,10 +409,10 @@ base AS (
 
         CASE
             WHEN fo.relatedBillId IS NOT NULL AND TRIM(fo.relatedBillId) != '' 
-                THEN -((soi.price * soi.quantity) - (soi.discount * soi.quantity)) 
+                THEN -((soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.discount * soi.quantity)) 
             WHEN fo.channelName = 'Kho Lẻ' 
-                THEN (soi.price * soi.quantity) - soi.discount - fo.usedPointsMoney
-            ELSE (soi.price * soi.quantity) - (soi.discount * soi.quantity)
+                THEN (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - soi.discount - fo.usedPointsMoney
+            ELSE (soi.price * soi.quantity) + (soi.quantity * COALESCE(soi.vat,0)) - (soi.discount * soi.quantity)
         END AS rvn,
 
         fo.channelName
@@ -434,7 +434,7 @@ SELECT
     SUM(rvn) AS rvn
 FROM base
 WHERE
-    store NOT IN ('TIKTOK', 'SHOPEE')
+    store NOT IN ('TIKTOK', 'SHOPEE', 'ECOM SG')
     AND NOT (store = 'WEB' AND channelName <> 'Kho Lẻ')
 GROUP BY
     year, month, channel, category, subcategory, default_code;

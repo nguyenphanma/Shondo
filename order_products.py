@@ -282,7 +282,7 @@ query_sales_90_days = """
             END, 1
         ) AS avg_qty
     FROM main_data
-    WHERE store != 'ECOM'
+    WHERE store NOT IN('ECOM', 'ECOM SG')
     GROUP BY 
         store,
         category,
@@ -395,7 +395,7 @@ df_target['month'] = df_target['month'].astype(int)
 # =========================
 # 0) THAM SỐ THÁNG ĐẶT HÀNG
 # =========================
-ORDER_MONTH = 4         # ví dụ: tháng 11
+ORDER_MONTH = 6       # ví dụ: tháng 11
 ORDER_YEAR  = 2026     # ví dụ: năm 2025
 
 # % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
