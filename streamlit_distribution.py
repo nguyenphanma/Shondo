@@ -341,8 +341,172 @@ if page == "Distribution Task":
                 else:
                     st.error("Dữ liệu tồn kho chưa được khởi tạo!")
         except Exception as e:
-            st.error(f"Lỗi khi đọc file: {e}")
+            st.error(f"Lỗi khi đọc file: {e}")       
 ###################################################################
+    # RÚT HÀNG THEO DANH SÁCH
+    st.sidebar.title("Rút Hàng Theo Danh Sách")
+    uploaded_withdraw_file = st.sidebar.file_uploader(
+        "Tải lên file danh sách rút hàng (Excel):", 
+        type=["xlsx", "xls"],
+        key="withdraw_file"
+    )
+
+    if uploaded_withdraw_file:
+        try:
+            withdraw_df = pd.read_excel(uploaded_withdraw_file)
+            
+            if 'fdcode' not in withdraw_df.columns or 'qty' not in withdraw_df.columns:
+                st.error("File Excel phải chứa cột 'fdcode' và 'qty'.")
+            else:
+                st.write("### 📋 Dữ liệu yêu cầu rút hàng:")
+                display_withdraw_input = withdraw_df.copy()
+                display_withdraw_input = display_withdraw_input.rename(columns={
+                    'fdcode': 'Mã sản phẩm',
+                    'qty': 'Số lượng cần rút'
+                })
+                st.dataframe(sanitize_for_streamlit(display_withdraw_input), use_container_width=True)
+
+                if "df_merge" in st.session_state and not st.session_state.df_merge.empty:
+                    # Lọc dữ liệu theo các bộ lọc loại bỏ
+                    filtered_df_merge = filter_excluded_data(
+                        st.session_state.df_merge.copy(),
+                        excluded_stores,
+                        excluded_fdcode
+                    )
+                    
+                    # ✅ LẤY THÊM DF_WAREHOUSE VÀ DF_WAREHOUSE_ECOM TỪ SESSION STATE
+                    df_warehouse_current = st.session_state.get('df_warehouse', pd.DataFrame())
+                    df_warehouse_ecom_current = st.session_state.get('df_warehouse_ecom', pd.DataFrame())
+                    
+                    # Hiển thị tổng quan
+                    st.write("### 📊 Tổng quan yêu cầu rút:")
+                    summary_withdraw = withdraw_df.groupby('fdcode')['qty'].sum().reset_index()
+                    summary_withdraw.columns = ['fdcode', 'total_qty_needed']
+                    
+                    display_summary = summary_withdraw.copy()
+                    display_summary = display_summary.rename(columns={
+                        'fdcode': 'Mã sản phẩm',
+                        'total_qty_needed': 'Tổng số lượng cần rút'
+                    })
+                    st.dataframe(sanitize_for_streamlit(display_summary), use_container_width=True)
+                    
+                    # Kiểm tra tồn kho (GỘP CẢ KHO)
+                    st.write("### ✅ Kiểm tra tồn kho (bao gồm cả kho):")
+                    check_results = []
+                    for _, row in summary_withdraw.iterrows():
+                        msp = row['fdcode']
+                        qty_needed = row['total_qty_needed']
+                        
+                        # Tính tổng từ tất cả nguồn
+                        store_available = filtered_df_merge[filtered_df_merge['fdcode'] == msp]['available'].sum()
+                        warehouse_available = df_warehouse_current[df_warehouse_current['fdcode'] == msp]['available'].sum() if not df_warehouse_current.empty else 0
+                        warehouse_ecom_available = df_warehouse_ecom_current[df_warehouse_ecom_current['fdcode'] == msp]['available'].sum() if not df_warehouse_ecom_current.empty else 0
+                        
+                        available_total = store_available + warehouse_available + warehouse_ecom_available
+                        
+                        status = "✅ Đủ hàng" if available_total >= qty_needed else "⚠️ Không đủ"
+                        check_results.append({
+                            'Mã sản phẩm': msp,
+                            'Cần rút': int(qty_needed),
+                            'Tồn stores': int(store_available),
+                            'Tồn KHO TỔNG': int(warehouse_available),
+                            'Tồn ECOM_SG': int(warehouse_ecom_available),
+                            'Tổng tồn': int(available_total),
+                            'Chênh lệch': int(available_total - qty_needed),
+                            'Trạng thái': status
+                        })
+                    
+                    check_df = pd.DataFrame(check_results)
+                    st.dataframe(sanitize_for_streamlit(check_df), use_container_width=True)
+
+                    # Nút rút hàng
+                    if st.sidebar.button("🔽 Thực Hiện Rút Hàng", use_container_width=True):
+                        with st.spinner('Đang xử lý rút hàng...'):
+                            # ✅ TRUYỀN THÊM DF_WAREHOUSE VÀ DF_WAREHOUSE_ECOM
+                            withdraw_result_df, updated_merge, updated_warehouse, updated_warehouse_ecom = dt.withdraw_from_stores(
+                                withdraw_df, 
+                                filtered_df_merge,
+                                df_warehouse_current,
+                                df_warehouse_ecom_current
+                            )
+                            
+                            # ✅ CẬP NHẬT LẠI SESSION STATE
+                            st.session_state.df_merge = updated_merge
+                            if updated_warehouse is not None:
+                                st.session_state.df_warehouse = updated_warehouse
+                            if updated_warehouse_ecom is not None:
+                                st.session_state.df_warehouse_ecom = updated_warehouse_ecom
+                            
+                            if not withdraw_result_df.empty:
+                                st.session_state.task_results.append(
+                                    ("Rút Hàng Theo Danh Sách", sanitize_for_streamlit(withdraw_result_df))
+                                )
+                                st.success("✅ Đã thực hiện rút hàng thành công!")
+                                
+                                # Hiển thị kết quả chi tiết
+                                st.write("### 📦 Kết quả rút hàng chi tiết:")
+                                display_result = withdraw_result_df.copy()
+                                display_result = display_result.rename(columns={
+                                    'fdcode': 'Mã sản phẩm',
+                                    'from_store': 'Rút từ kho/CH',
+                                    'withdraw_qty': 'Số lượng'
+                                })
+                                st.dataframe(sanitize_for_streamlit(display_result), use_container_width=True)
+                                
+                                # Tổng hợp theo fdcode
+                                st.write("### 📈 Tổng hợp theo mã sản phẩm:")
+                                summary_result = withdraw_result_df.groupby('fdcode')['withdraw_qty'].sum().reset_index()
+                                summary_result.columns = ['fdcode', 'total_withdrawn']
+                                
+                                summary_comparison = summary_withdraw.merge(
+                                    summary_result, 
+                                    on='fdcode', 
+                                    how='left'
+                                )
+                                summary_comparison['total_withdrawn'] = summary_comparison['total_withdrawn'].fillna(0).astype(int)
+                                summary_comparison['shortage'] = (
+                                    summary_comparison['total_qty_needed'] - 
+                                    summary_comparison['total_withdrawn']
+                                ).astype(int)
+                                
+                                display_comparison = summary_comparison.rename(columns={
+                                    'fdcode': 'Mã sản phẩm',
+                                    'total_qty_needed': 'Yêu cầu rút',
+                                    'total_withdrawn': 'Đã rút',
+                                    'shortage': 'Còn thiếu'
+                                })
+                                
+                                st.dataframe(sanitize_for_streamlit(display_comparison), use_container_width=True)
+                                
+                                # Cảnh báo
+                                shortage_items = display_comparison[display_comparison['Còn thiếu'] > 0]
+                                if not shortage_items.empty:
+                                    st.warning("⚠️ Một số sản phẩm không rút đủ:")
+                                    st.dataframe(sanitize_for_streamlit(shortage_items), use_container_width=True)
+                                
+                                # Tổng hợp theo store
+                                st.write("### 🏪 Tổng hợp theo kho/cửa hàng:")
+                                summary_by_store = withdraw_result_df.groupby('from_store')['withdraw_qty'].sum().reset_index()
+                                summary_by_store.columns = ['from_store', 'total_qty']
+                                summary_by_store = summary_by_store.sort_values('total_qty', ascending=False)
+                                
+                                display_by_store = summary_by_store.rename(columns={
+                                    'from_store': 'Kho/Cửa hàng',
+                                    'total_qty': 'Tổng số lượng đã rút'
+                                })
+                                
+                                st.dataframe(sanitize_for_streamlit(display_by_store), use_container_width=True)
+                            else:
+                                st.warning("⚠️ Không có hàng để rút!")
+                                
+                else:
+                    st.error("❌ Dữ liệu tồn kho chưa được khởi tạo!")
+                    
+        except Exception as e:
+            st.error(f"❌ Lỗi: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+####################################
     # Hiển thị kết quả từng thao tác
     if st.session_state.task_results:
         st.subheader("Kết Quả Từng Thao Tác")

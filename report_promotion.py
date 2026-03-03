@@ -316,7 +316,7 @@ query_sales_current = f"""
 with engine.connect() as conn:
     current_df = pd.read_sql_query(text(query_sales_current), conn)
 print('Finished query the sale')
-
+current_df = current_df[current_df['store'] != 'DT KHÁC']
 # SALE ECOM
 # Lấy thông tin từ biến môi trường
 host_ecom = os.getenv("DB_HOST_ECOM")

@@ -246,7 +246,7 @@ combined_group['avg_qty'] = combined_group.apply(
 )
 combined_group['month_launch'] = round(combined_group['days_since_launch']/30,1)
 combined_group.drop(columns=['launch_date', 'days_since_launch'], inplace=True)
-combined_group = combined_group[combined_group['category'].isin(["SANDALS", "SLIDES", "KID SANDALS", "SNEAKERS", "KID SNEAKERS", "BAGS", "HATS"])]
+combined_group = combined_group[~combined_group['subcategory'].isin(["BAGS"])]
 
 # SALE 3 THÁNG GẦN NHẤT ECOM
 # SALE ECOM 3 THÁNG GẦN NHẤT
@@ -301,7 +301,7 @@ combined_df_ecom_merge = pd.merge(
     how='left'
 )
 
-combined_df_ecom_merge_ft = combined_df_ecom_merge[combined_df_ecom_merge['category'].isin(["SANDALS", "SLIDES", "KID SANDALS", "SNEAKERS", "KID SNEAKERS", "BAGS", "HATS"])]
+combined_df_ecom_merge_ft = combined_df_ecom_merge[~combined_df_ecom_merge['subcategory'].isin(["BAGS"])]
 
 df = combined_df_ecom_merge_ft.copy()
 
@@ -347,7 +347,6 @@ combined_gr = df_sale_total.groupby(['category', 'subcategory', 'default_code', 
 }).reset_index()
 
 combined_gr_ft = combined_gr[
-    (combined_gr['category'] != 'BAGS') &
     (combined_gr['subcategory'] != 'BAGS')
 ]
 
@@ -419,12 +418,12 @@ df_max_dis = pd.DataFrame(data_sale[1:], columns=data_sale[0])
 df_fn_mer = pd.merge(df_filtered, df_max_dis[['default_code', 'discount_max']], on='default_code', how='left')
 
 # Lấy danh sách top 10 sản phẩm có giá trị đơn hàng cao nhất
-top10_sku = (
+top20_sku = (
     combined_df.groupby(['default_code'])['rvn']
     .sum()
     .reset_index()
     .sort_values(by='rvn', ascending=False)
-    .head(10)['default_code']
+    .head(20)['default_code']
     .tolist()
 )
 
@@ -442,48 +441,43 @@ def calculate_discount(row):
     total_stock = row['total_stock']
     type_products = row['type_products']
     type_kds = row['type_kds']
-    ma_sp_cha = row['default_code']  # Lấy giá trị Mã sp cha của sản phẩm
+    ma_sp_cha = row['default_code']
     stock_pen = row['order_pen']
-    
-    # Nếu sản phẩm thuộc danh sách top10, chỉ giảm 10%
-    if ma_sp_cha in top10_sku:
+
+    # Top20 -> cố định 10%
+    if ma_sp_cha in top20_sku:
         return 0.1
 
-    # Kiểm tra cột type_kds có phải là chuỗi và không rỗng
+    # Có type_kds -> cố định 10%
     if isinstance(type_kds, str) and type_kds.strip():
         return 0.1
 
-    # 🚨 Ưu tiên điều kiện 0.7 trước - Nếu thỏa mãn, return ngay
+    # 🚨 hard rule 70%
     if (month_launch > 12) and (hst >= 0) and (type_products == 'Q') and (total_stock <= 50):
-        return 0.7  # Không cho phép bị ghi đè
+        return 0.7
 
-    # Xác định mức giảm giá ban đầu
-    discount = 0.0  # Mặc định không giảm giá
+    # ======================
+    # Rule lifecycle mới
+    # ======================
+    if month_launch >= 4:
+        discount = 0.10 + (month_launch - 4) * 0.05
+        discount = min(discount, 0.7)
+    else:
+        discount = 0.0
 
-    # Thiết lập mức giảm giá dựa trên `month_launch`
-    if 3 < month_launch <= 6:
-        discount = 0.1
-    elif 6 < month_launch <= 9:
-        discount = 0.2
-    elif 9 < month_launch <= 12:
-        discount = 0.3
-    elif month_launch > 12:
-        if hst > 5:
-            discount = 0.5
-        else:
-            discount = 0.4
-
-    # Giới hạn mức giảm giá với type_products = 'S'
+    # Limit với S
     if type_products == 'S':
         if stock_pen > 200:
-            discount = min(discount, 0.2)  # Nếu còn nợ > 200, giảm giá tối đa 0.2
+            discount = min(discount, 0.2)
         else:
-            discount = min(discount, 0.3)  # Các trường hợp khác, giảm giá tối đa 0.3
+            discount = min(discount, 0.3)
 
-    # Điều kiện giới hạn giảm giá nếu `Mã sp cha` thuộc danh sách top AVG_SLB_MONTH
+    # Limit top avg sell
     if ma_sp_cha in top_avg_slb_month_sku and type_products != 'Q':
         discount = min(discount, 0.15)
-
+    # ===== normalize về step 5% =====
+    import math
+    discount = math.floor(discount / 0.05) * 0.05
     return discount
 
 # Áp dụng tính toán giảm giá
