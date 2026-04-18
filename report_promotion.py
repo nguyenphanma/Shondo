@@ -7,8 +7,11 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+load_dotenv()
+
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 sht = gs.open_by_key('1WCyB2XBaOH4Kn1DAY5J0lZnu7ar8a-dEpezoRi8Qa0M')
 SHEET1 = 'RAW_SALE'
 SHEET2 = 'RAW_STOCK'
@@ -24,9 +27,6 @@ date_end_raw = worksheet_report.get_values('B9')[0][0].strip()
 date_start = datetime.strptime(date_start_raw, '%Y/%m/%d').strftime('%Y-%m-%d')
 date_end = datetime.strptime(date_end_raw, '%Y/%m/%d').strftime('%Y-%m-%d')
  
-
-# Kết nối MySQL
-load_dotenv()
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
 # Lấy thông tin từ biến môi trường
@@ -359,6 +359,8 @@ SELECT
     WHERE
         DATE(eo.order_date) BETWEEN DATE('{date_start}') AND DATE('{date_end}')
         AND eo.status NOT IN ('cancelled', 'returned')
+        AND UPPER(os.name) <> 'BOXME'
+        AND eoi.product_sku <>''
     GROUP BY channel,
              store,
              fdcode,

@@ -5,10 +5,12 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
+load_dotenv()
 # GOOGLE SHEET
 # Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 
 # Mở Google Sheets bằng Google Sheets ID
 sht = gs.open_by_key('1w7PN9UXeDf38q7ZtnquCcbikv2mBuwTRrpl-bOzBMiI')
@@ -16,7 +18,7 @@ SHEET1 = 'customers'
 
 # Thông tin kết nối MySQL
 # Kết nối MySQL
-load_dotenv()
+
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
 # Lấy thông tin từ biến môi trường
@@ -44,7 +46,7 @@ query_customers = """
     WHERE s.channelName = 'Kho Lẻ'
     AND s.customer_id NOT IN (108248129, 122951605)
     AND s.customer_id IS NOT NULL
-    AND MONTH(c.birthday) = 2
+    AND MONTH(c.birthday) = 4
     GROUP BY s.customer_id, 
             c.name, 
             c.mobile, 

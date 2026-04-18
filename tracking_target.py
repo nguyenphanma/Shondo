@@ -7,16 +7,18 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+load_dotenv()
+
+# GOOGLE SHEET
+# Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 sht = gs.open_by_key('1aFDuIMWZvW2dBIJsUpWgE4XUyIFfW4wFqq4Undhoyfw')
 SHEET1 = 'data_sale'
 
 print('Finished querying the google sheet')
 
-
-# Kết nối MySQL
-load_dotenv()
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
 # Lấy thông tin từ biến môi trường
@@ -244,7 +246,17 @@ query_sales_2024= f"""
                 AND so.saleChannel IN (1, 2, 10, 20, 21, 46)
                 AND so.channelName != 'Kho Lẻ'
         )
-        AND YEAR(so.createdDateTime) BETWEEN 2024 AND 2025
+        AND (
+                (
+                    YEAR(so.createdDateTime) = 2024
+                    AND DATE(so.createdDateTime) <= DATE_SUB(CURDATE(), INTERVAL (YEAR(CURDATE()) - 2024) YEAR)
+                )
+                OR
+                (
+                    YEAR(so.createdDateTime) = 2025
+                    AND DATE(so.createdDateTime) <= DATE_SUB(CURDATE(), INTERVAL (YEAR(CURDATE()) - 2025) YEAR)
+                )
+        )
     ),
     base AS (
         SELECT 
@@ -338,26 +350,31 @@ engine_ecom = create_engine(
 # ECOM 2024
 query_sales_ecom_2024 = f"""
 SELECT
-	DATE(eo.order_date) date_ord,
+    DATE(eo.order_date) AS date_ord,
     SUBSTRING_INDEX(eo.order_id, '_', -1) AS order_id_clean,
-	"ECOM" as channel,
+    'ECOM' AS channel,
     CASE 
         WHEN UPPER(os.name) = 'FACEBOOK' THEN 'FB/INS/ZL/NB'
         WHEN UPPER(os.name) = 'TIKTOKSHOP' THEN 'TIKTOK'
         ELSE UPPER(os.name) 
     END AS store,
-    eoi.product_sku fdcode,
-    eoi.quantity qty,
-    eoi.price * eoi.quantity as rvn
+    eoi.product_sku AS fdcode,
+    eoi.quantity AS qty,
+    eoi.price * eoi.quantity AS rvn
 FROM ecommerce_orders eo
-JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
-JOIN order_source os ON eo.order_source_id = os.id
-WHERE
-    YEAR(eo.order_date) BETWEEN 2024 AND 2025
-    AND eoi.product_sku NOT LIKE '%HOP%'
-    AND eoi.product_sku NOT LIKE '%TUIRUT%'
-    AND eoi.product_sku <> 'LIMAXCARD'
-    AND eo.status NOT IN('cancelled', 'returned');
+JOIN ecommerce_order_items eoi 
+    ON eoi.external_order_id = eo.external_order_id
+JOIN order_source os 
+    ON eo.order_source_id = os.id
+WHERE (
+        (eo.order_date >= '2024-01-01' AND eo.order_date < DATE_ADD('2024-01-01', INTERVAL DAYOFYEAR(CURDATE()) DAY))
+        OR
+        (eo.order_date >= '2025-01-01' AND eo.order_date < DATE_ADD('2025-01-01', INTERVAL DAYOFYEAR(CURDATE()) DAY))
+      )
+  AND eoi.product_sku NOT LIKE '%HOP%'
+  AND eoi.product_sku NOT LIKE '%TUIRUT%'
+  AND eoi.product_sku <> 'LIMAXCARD'
+  AND eo.status NOT IN ('cancelled', 'returned');
 """
 
 # Lấy dữ liệu bán hàng từ database
@@ -367,27 +384,31 @@ print("query sale_ecom 2024 day finished.")
 
 # ECOM 2024
 query_sales_ecom_2026 = f"""
-SELECT
-	DATE(eo.order_date) date_ord,
-    SUBSTRING_INDEX(eo.order_id, '_', -1) AS order_id_clean,
-	"ECOM" as channel,
-    CASE 
-        WHEN UPPER(os.name) = 'FACEBOOK' THEN 'FB/INS/ZL/NB'
-        WHEN UPPER(os.name) = 'TIKTOKSHOP' THEN 'TIKTOK'
-        ELSE UPPER(os.name) 
-    END AS store,
-    eoi.product_sku fdcode,
-    eoi.quantity qty,
-    eoi.price * eoi.quantity as rvn
-FROM ecommerce_orders eo
-JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
-JOIN order_source os ON eo.order_source_id = os.id
-WHERE
-    YEAR(eo.order_date) = '2026'
+    SELECT
+        DATE(eo.order_date) AS date_ord,
+        SUBSTRING_INDEX(eo.order_id, '_', -1) AS order_id_clean,
+        'ECOM' AS channel,
+        CASE 
+            WHEN UPPER(os.name) = 'FACEBOOK' THEN 'FB/INS/ZL/NB'
+            WHEN UPPER(os.name) = 'TIKTOKSHOP' THEN 'TIKTOK'
+            ELSE UPPER(os.name)
+        END AS store,
+        eoi.product_sku AS fdcode,
+        eoi.quantity AS qty,
+        eoi.price * eoi.quantity AS rvn
+    FROM ecommerce_orders eo
+    JOIN ecommerce_order_items eoi 
+        ON eoi.external_order_id = eo.external_order_id
+    JOIN order_source os 
+        ON eo.order_source_id = os.id
+    WHERE eo.order_date >= '2026-01-01'
+    AND eo.order_date < CURDATE()
+    AND UPPER(os.name) <> 'BOXME'
+    AND eoi.product_sku <>''
     AND eoi.product_sku NOT LIKE '%HOP%'
     AND eoi.product_sku NOT LIKE '%TUIRUT%'
     AND eoi.product_sku <> 'LIMAXCARD'
-    AND eo.status NOT IN('cancelled', 'returned');
+    AND eo.status NOT IN ('cancelled', 'returned');
 """
 
 # Lấy dữ liệu bán hàng từ database

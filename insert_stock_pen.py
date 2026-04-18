@@ -8,11 +8,13 @@ import gspread_dataframe as gd
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-
-year ='2026'
-month ='02'
+from pathlib import Path
 
 load_dotenv()
+
+year ='2026'
+month ='04'
+
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
 # Lấy thông tin từ biến môi trường
@@ -27,9 +29,7 @@ connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}
 engine = create_engine(connection_string)
 
 
-current_drive = os.path.splitdrive(os.getcwd())[0].upper()
-raw_path = rf"OneDrive\KDA_Trinh Võ\KDA data\THEO DÕI - ĐỀ XUẤT\TRẢ ĐƠN ĐẶT HÀNG\{year}\THANG {month}"
-folder_path = os.path.normpath(f"{current_drive}/{raw_path}")
+folder_path = rf"G:\My Drive\MA\TRẢ ĐƠN ĐẶT HÀNG\{year}\THANG {month}"
 files = [f for f in os.listdir(folder_path) if f.endswith('.xlsx')]
 
 # Kiểm tra tồn tại thư mục

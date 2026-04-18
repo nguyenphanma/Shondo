@@ -7,7 +7,7 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
-
+from pathlib import Path
 load_dotenv()
 
 # Kết nối MySQL
@@ -46,7 +46,10 @@ engine_ecom = create_engine(
     connect_args={"connect_timeout": 30}  # tăng timeout từ mặc định (~10s) lên 20s
 )
 
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+
+# GOOGLE SHEET
+# Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 sht = gs.open_by_key('1aFDuIMWZvW2dBIJsUpWgE4XUyIFfW4wFqq4Undhoyfw')
 SHEET1 = 'SEMI_DATA'
 SHEET2 = 'ORDER_TRACKING'
@@ -469,6 +472,8 @@ WHERE
         DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
                                AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
     )
+    AND UPPER(os.name) <> 'BOXME'
+    AND eoi.product_sku <>''
     AND eoi.product_sku NOT LIKE '%HOP%'
     AND eoi.product_sku NOT LIKE '%TUIRUT%'
     AND eoi.product_sku <> 'LIMAXCARD'

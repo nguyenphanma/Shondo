@@ -8,16 +8,18 @@ import gspread_dataframe as gd
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
 def show_stock():
-    gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+    load_dotenv()
+    gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 
     # Mở Google Sheets bằng Google Sheets ID
     sht = gs.open_by_key('1cYjexualwXFh5SQvD9-95FwMNSck4SBAeovKjcYWjW8')
     SHEET1 = 'RAW_STOCK'
     SHEET2 = 'RAW_PRODUCTS'
 
-    load_dotenv()
+    
 
     # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
     # Lấy thông tin từ biến môi trường
@@ -167,10 +169,10 @@ def show_stock():
     worksheet_stock.clear()
     gd.set_with_dataframe(worksheet_stock, df_stock)
 
-
+    df_products_template = df_products_template[df_products_template['default_code'].isin(df_stock['default_code'])]
     worksheet_products_template = sht.worksheet(SHEET2)
     worksheet_products_template.clear()
     gd.set_with_dataframe(worksheet_products_template, df_products_template)
 
-if show_stock =="_main_":
+if __name__ =="__main__":
     show_stock()

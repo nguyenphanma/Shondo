@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import os
 from dotenv import load_dotenv
-
+from pathlib import Path
 load_dotenv()
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
@@ -16,7 +16,7 @@ port = os.getenv("DB_PORT", 3306)
 connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
 engine = create_engine(connection_string)
 
-file_path = r"D:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\table_adjust.xlsx"
+file_path = Path(os.getenv('MA_SHONDO_DIR')) /"table_adjust.xlsx"
 
 # Đọc dữ liệu từ file Excel
 df_kpi = pd.read_excel(file_path, sheet_name="kpi")

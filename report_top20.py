@@ -7,9 +7,13 @@ import gspread
 import gspread_dataframe as gd
 from datetime import datetime
 from dotenv import load_dotenv
+from pathlib import Path
 
 def main():
-    gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+
+    load_dotenv()
+
+    gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 
     # Mở Google Sheets bằng Google Sheets ID
     sht = gs.open_by_key('1jIZl6HWBAZF4okz60J9JU-aXLjzFjjN-tzFDLK1JUYE')
@@ -21,7 +25,6 @@ def main():
     SHEET6 = 'RAW_SALE'
     SHEET7 = 'BOXME'
 
-    load_dotenv()
 
     # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
     # Lấy thông tin từ biến môi trường
@@ -328,6 +331,8 @@ def main():
         WHERE
             DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
             AND eo.status NOT IN ('cancelled', 'returned', 'Hủy bởi khách hàng')
+            AND UPPER(os.name) <> 'BOXME'
+            AND eoi.product_sku <>''
         GROUP BY store,
                 fdcode
     """

@@ -6,8 +6,11 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+load_dotenv()
+
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 sht = gs.open_by_key('1U-dcqwnDrgkQjPndtvszZfZIBSEYx0kPKm0f-ud8KFg')
 SHEET1 = 'RAW_SEMI'
 SHEET2 = 'ORDER'
@@ -328,6 +331,8 @@ query_sales_90_days_ecom = """
     WHERE
         DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
         AND eo.status NOT IN ('cancelled', 'returned')
+        AND UPPER(os.name) <> 'BOXME'
+        AND eoi.product_sku <>''
     GROUP BY store,
              fdcode
 """
@@ -395,7 +400,7 @@ df_target['month'] = df_target['month'].astype(int)
 # =========================
 # 0) THAM SỐ THÁNG ĐẶT HÀNG
 # =========================
-ORDER_MONTH = 6       # ví dụ: tháng 11
+ORDER_MONTH = 8     # ví dụ: tháng 11
 ORDER_YEAR  = 2026     # ví dụ: năm 2025
 
 # % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
@@ -744,7 +749,6 @@ df_order_plan['available_future'] = df_order_plan['available'].fillna(0) + df_or
 # shortage_raw > 0: DƯ ; shortage_raw < 0: THIẾU
 df_order_plan['shortage_raw'] = (
     df_order_plan['available_future']
-    - df_order_plan['forecast_qty_until_start'].fillna(0)
     - df_order_plan['required_stock_for_cover'].fillna(0)
 )
 

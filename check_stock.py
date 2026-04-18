@@ -7,14 +7,17 @@ import gspread
 import gspread_dataframe as gd
 from datetime import datetime
 from dotenv import load_dotenv
-
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+from pathlib import Path
+load_dotenv()
+# GOOGLE SHEET
+# Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 
 # Mở Google Sheets bằng Google Sheets ID
 sht = gs.open_by_key('1dLmi5h3VpB03NA524BAEvSUwKaxE3W-DhAEhLGgUaEY')
 
 SHEET1 = 'RAW_STOCK'
-
+SHEET2 = 'PRODUCTS'
 load_dotenv()
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
@@ -178,3 +181,75 @@ worksheet_stock = sht.worksheet(SHEET1)
 worksheet_stock.clear()
 gd.set_with_dataframe(worksheet_stock, df_stock_filter)
 print("update stock finished.")
+
+
+query_product_template = """
+    SELECT 
+        ps.product_id AS parent_product_id,
+        ps.code AS default_code,               -- Mã sản phẩm cha
+        ps.category_id,
+        -- Mã sản phẩm con (nếu có), nếu không thì dùng mã cha
+        COALESCE(ps2.code, ps.code) AS fdcode,
+
+        COALESCE(ps2.price, ps.price) AS price,
+
+        -- Size nếu là giày dép
+        CASE
+            WHEN UPPER(COALESCE(c2.name, c1.name)) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN
+                CASE 
+                    WHEN RIGHT(COALESCE(ps2.code, ps.code), 1) = 'W' THEN CONCAT(LEFT(COALESCE(ps2.code, ps.code), 2), 'W')
+                    ELSE LEFT(COALESCE(ps2.code, ps.code), 2)
+                END
+            ELSE '#'
+        END AS size,
+
+        -- Danh mục con
+        COALESCE(c1.name, c2.name) AS subcategory,
+
+        -- Danh mục cha
+        COALESCE(c2.name, c1.name) AS category,
+
+        -- Ngày launch từ sản phẩm con nếu có, không thì lấy của sản phẩm cha
+        COALESCE(ps2.launch_date, ps.launch_date) AS launch_date,
+
+        -- Phân loại sản phẩm
+        CASE
+            WHEN COALESCE(ps2.launch_date, ps.launch_date) IS NULL 
+                AND UPPER(COALESCE(c2.name, c1.name)) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') 
+                THEN 'SP CHỜ BÁN'
+            WHEN DATEDIFF(CURRENT_DATE(), COALESCE(ps2.launch_date, ps.launch_date)) <= 90 
+                THEN 'SP MỚI'
+            WHEN UPPER(COALESCE(c2.name, c1.name)) IN ('BAGS', 'ACCESSORIES', 'BRACELETS', 'HATS', 'T-SHIRTS') 
+                THEN 'PHỤ KIỆN'
+            ELSE 'SP CŨ'
+        END AS type_products,
+        ps.image
+    FROM products ps
+    LEFT JOIN products ps2 
+        ON ps2.parent_id = ps.external_product_id   -- Ghép sản phẩm con
+    LEFT JOIN categories c1 
+        ON ps.category_id = c1.external_category_id
+    LEFT JOIN categories c2 
+        ON c1.parent_id = c2.category_id
+    WHERE ps.parent_id IN (-2, -1)                  -- Chỉ lấy sản phẩm cha
+    AND ps.product_id IS NOT NULL
+"""
+
+# Lấy dữ liệu bán hàng từ database
+with engine.connect() as conn:
+    df_products_template = pd.read_sql_query(text(query_product_template), conn)
+print('Finished query product_template')
+
+worksheet_pr = sht.worksheet(SHEET2)
+worksheet_pr.clear()
+gd.set_with_dataframe(worksheet_pr, df_products_template)
+print("update stock finished.")
+
+
+# KDS
+df_stock_kds = df_stock_filter[df_stock_filter['store'] != 'KHO SỈ']
+# Mở Google Sheets bằng Google Sheets ID
+sht_kds = gs.open_by_key('1tpalIrkQJ-WQCsVxhoPhGLvK2Rb3WzALN8H5vUTGgxE')
+worksheet_stock_kds = sht_kds.worksheet(SHEET1)
+worksheet_stock_kds.clear()
+gd.set_with_dataframe(worksheet_stock_kds, df_stock_kds)

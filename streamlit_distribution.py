@@ -2,6 +2,7 @@ import streamlit as st
 import distribution as dt  # File chứa các hàm tính toán
 import pandas as pd
 import show_distribution
+from ai_analyst import render_ai_analyst_tab, render_feedback_tab, save_proposals
 
 
 def sanitize_for_streamlit(df: pd.DataFrame) -> pd.DataFrame:
@@ -162,7 +163,10 @@ if "cfg_stock_from_wh" not in st.session_state:
 
 # Giao diện Streamlit
 st.sidebar.title("Chọn Chức Năng")
-page = st.sidebar.selectbox("Đi tới trang:", ["Distribution Task"])
+page = st.sidebar.selectbox(
+    "Đi tới trang:",
+    ["Distribution Task", "🤖 AI Analyst", "📊 Feedback Loop"]
+)
 
 if page == "Distribution Task":
     st.title("Distribution Task")
@@ -271,6 +275,9 @@ if page == "Distribution Task":
             normalize_core_dtypes()
             st.session_state.task_results.append(("Luân Chuyển Giữa Cửa Hàng", sanitize_for_streamlit(transfer_df)))
             st.success("Đã luân chuyển hàng hóa!")
+            # THÊM 2 DÒNG SAU st.success(...):
+            n_saved = save_proposals(transfer_df, session_id="luan_chuyen")
+            st.caption(f"💾 Đã lưu {n_saved} đề xuất vào Feedback Loop")
 
     # Bốc tồn từ kho tổng
     if st.sidebar.button("Bốc Tồn Từ Kho Tổng"):
@@ -305,6 +312,8 @@ if page == "Distribution Task":
                 normalize_core_dtypes()
                 st.session_state.task_results.append(("Bốc Tồn Từ Kho Tổng", sanitize_for_streamlit(transfer_df)))
                 st.success("Đã bốc tồn từ kho tổng!")
+                n_saved = save_proposals(transfer_df, session_id="boc_ton")
+                st.caption(f"💾 Đã lưu {n_saved} đề xuất vào Feedback Loop")
         else:
             st.error("Dữ liệu kho không hợp lệ. Vui lòng kiểm tra dữ liệu!")
     
@@ -442,6 +451,8 @@ if page == "Distribution Task":
                                     ("Rút Hàng Theo Danh Sách", sanitize_for_streamlit(withdraw_result_df))
                                 )
                                 st.success("✅ Đã thực hiện rút hàng thành công!")
+                                n_saved = save_proposals(transfer_df, session_id="boc_ton")
+                                st.caption(f"💾 Đã lưu {n_saved} đề xuất vào Feedback Loop")
                                 
                                 # Hiển thị kết quả chi tiết
                                 st.write("### 📦 Kết quả rút hàng chi tiết:")
@@ -567,3 +578,28 @@ if page == "Distribution Task":
                     st.success(f"Đã thêm cửa hàng mới: {new_store_name}")
                 else:
                     st.error("Dữ liệu chưa được khởi tạo!")
+
+import streamlit as st
+import pandas as pd
+
+# Đặt đoạn này NGAY SAU toàn bộ block `if page == "Distribution Task": ...`
+
+if False:  # ← đây chỉ là placeholder để IDE không báo lỗi, xóa dòng này khi paste vào
+    pass
+
+# ── TRANG AI ANALYST ──────────────────────────────────────────────
+# Paste đoạn này vào cuối streamlit_distribution.py:
+
+elif page == "🤖 AI Analyst":
+    render_ai_analyst_tab(
+        df_merge        = st.session_state.get("df_merge", pd.DataFrame()),
+        df_warehouse    = st.session_state.get("df_warehouse", pd.DataFrame()),
+        df_warehouse_ecom = st.session_state.get("df_warehouse_ecom", pd.DataFrame()),
+    )
+
+
+# ── TRANG FEEDBACK LOOP ───────────────────────────────────────────
+# Paste đoạn này tiếp theo:
+
+elif page == "📊 Feedback Loop":
+    render_feedback_tab()

@@ -8,7 +8,7 @@ import gspread_dataframe as gd
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-
+from pathlib import Path
 load_dotenv()
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
@@ -19,7 +19,7 @@ password = os.getenv("DB_PASSWORD")
 database = os.getenv("DB_NAME")
 port = os.getenv("DB_PORT", 3306)
 
-df_store_visits = pd.read_excel(r"D:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\store_visits.xlsx")
+df_store_visits = pd.read_excel(Path(os.getenv('MA_SHONDO_DIR')) / 'store_visits.xlsx')
 df_store_visits = df_store_visits[~df_store_visits['Cửa hàng'].isna()]
 df_store_visits_filter = df_store_visits.drop(['Chỉ tiêu', 'Tổng'], axis=1)
 df_long = df_store_visits_filter.melt(id_vars=['Cửa hàng'], var_name='period', value_name='visits')

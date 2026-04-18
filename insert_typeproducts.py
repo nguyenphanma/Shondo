@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from pathlib import Path
 
 # ============================
 # 1. Load biến môi trường
@@ -21,7 +22,7 @@ engine = create_engine(connection_string)
 # ============================
 # 2. Đọc file Excel type_products
 # ============================
-file_path = r"D:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\type_products.xlsx"
+file_path = Path(os.getenv('MA_SHONDO_DIR')) / 'type_products.xlsx'
 
 # Đọc file Excel
 df_type_products = pd.read_excel(file_path)

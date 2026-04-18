@@ -5,10 +5,12 @@ import gspread
 import gspread_dataframe as gd
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
+load_dotenv()
 # GOOGLE SHEET
 # Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
-gs = gspread.service_account(r'd:\OneDrive\KDA_Trinh Võ\KDA data\PYTHON_OPERATION\ma_shondo\mashondo.json')
+gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
 
 # Mở Google Sheets bằng Google Sheets ID
 sht = gs.open_by_key('1aFDuIMWZvW2dBIJsUpWgE4XUyIFfW4wFqq4Undhoyfw')
@@ -17,9 +19,7 @@ worksheet_ctl = sht.worksheet(SHEET1)
 data_plan = worksheet_ctl.get_all_values()
 df_plan = pd.DataFrame(data_plan[1:], columns=data_plan[0])
 
-# Thông tin kết nối MySQL
-# Kết nối MySQL
-load_dotenv()
+
 
 # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
 # Lấy thông tin từ biến môi trường
