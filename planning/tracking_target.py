@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from sqlalchemy import text
+from core.queries import get_product_template
 from core.db import get_engine, get_ecom_engine
 from core.sheets import get_client
 
@@ -21,55 +22,7 @@ print('Finished querying the google sheet')
 
 engine = get_engine()
 
-query_products_template = """
-    SELECT 
-        ps.product_id AS parent_product_id,
-        ps.code AS default_code,               -- Mã sản phẩm cha
-        CASE 
-            WHEN ps2.code IS NULL THEN ps.code -- Nếu không có mã con thì lấy mã cha
-            ELSE ps2.code                      -- Nếu có mã con thì lấy mã con
-        END AS fdcode,
-        ps.price,
-        CASE
-        WHEN UPPER(c2.name) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN
-            CASE 
-            WHEN RIGHT(COALESCE(ps2.code, ps.code), 1) = 'W' THEN CONCAT(LEFT(COALESCE(ps2.code, ps.code), 2), 'W')
-            ELSE LEFT(COALESCE(ps2.code, ps.code), 2)
-            END
-        ELSE '#'
-        END AS size,
-        CASE 
-            WHEN c1.name IS NULL THEN c2.name 
-            ELSE c1.name 
-        END AS subcategory,
-        
-        CASE 
-            WHEN c2.name IS NULL THEN c1.name
-            ELSE c2.name 
-        END AS category,
-        ps2.launch_date,
-        CASE
-            WHEN ps2.launch_date IS NULL 
-                AND UPPER(c2.name) IN ('SANDALS', 'KID SANDALS', 'KID SNEAKERS', 'SLIDES', 'SNEAKERS') THEN 'SP CHỜ BÁN'
-            WHEN DATEDIFF(CURRENT_DATE(), ps2.launch_date) <= 90 THEN 'SP MỚI'
-            WHEN UPPER(c2.name) IN ('BAGS', 'ACCESSORIES', 'BRACELETS', 'HATS', 'T-SHIRTS') THEN 'PHỤ KIỆN'
-            ELSE 'SP CŨ'
-        END AS type_products
-    FROM categories c1
-    LEFT JOIN categories c2
-        ON c1.parent_id = c2.category_id
-    LEFT JOIN products ps
-        ON ps.category_id = c1.external_category_id 
-    AND ps.parent_id IN (-2, -1)                   -- Chỉ lấy SP cha
-    LEFT JOIN products ps2 
-        ON ps2.parent_id = ps.external_product_id     -- Ghép với SP con
-    WHERE ps.product_id IS NOT NULL
-        AND ps.code IS NOT NULL;
-"""
-# Lấy dữ liệu bán hàng từ database
-with engine.connect() as conn:
-    df_template_fix = pd.read_sql_query(text(query_products_template), conn)
-print('Finished querying the template')
+df_template_fix = get_product_template(engine)
 
 def channel(code):
     if code == 'KHO SỈ':
