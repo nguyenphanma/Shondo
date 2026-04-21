@@ -28,8 +28,8 @@ def get_access_token():
     return resp.json()["access_token"]
 
 
-def trigger_refresh(token: str, dataset_id: str):
-    url  = f"{PBI_BASE_URL}/datasets/{dataset_id}/refreshes"
+def trigger_refresh(token: str):
+    url  = f"{PBI_BASE_URL}/datasets/{DATASET_ID}/refreshes"
     resp = requests.post(url, headers={"Authorization": f"Bearer {token}"})
     if resp.status_code == 202:
         print("  Refresh triggered thanh cong")
@@ -37,24 +37,24 @@ def trigger_refresh(token: str, dataset_id: str):
     resp.raise_for_status()
 
 
-def get_refresh_status(token: str, dataset_id: str) -> dict:
-    url  = f"{PBI_BASE_URL}/datasets/{dataset_id}/refreshes?$top=1"
+def get_refresh_status(token: str) -> dict:
+    url  = f"{PBI_BASE_URL}/datasets/{DATASET_ID}/refreshes?$top=1"
     resp = requests.get(url, headers={"Authorization": f"Bearer {token}"})
     resp.raise_for_status()
     history = resp.json().get("value", [])
     return history[0] if history else {}
 
 
-def refresh_and_wait(dataset_id: str, name: str, timeout_minutes: int = 30):
-    print(f"\n[{datetime.now():%H:%M:%S}] Bat dau refresh {name}")
+def refresh_and_wait(timeout_minutes: int = 30):
+    print(f"\n[{datetime.now():%H:%M:%S}] Bat dau refresh Company Performance")
     token = get_access_token()
-    trigger_refresh(token, dataset_id)
+    trigger_refresh(token)
 
     deadline = time.time() + timeout_minutes * 60
     while time.time() < deadline:
         time.sleep(20)
         token  = get_access_token()
-        status = get_refresh_status(token, dataset_id)
+        status = get_refresh_status(token)
         state  = status.get("status", "Unknown")
         print(f"  [{datetime.now():%H:%M:%S}] Trang thai: {state}")
 
@@ -70,8 +70,4 @@ def refresh_and_wait(dataset_id: str, name: str, timeout_minutes: int = 30):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-id", required=True)
-    parser.add_argument("--name", required=True)
-    args = parser.parse_args()
-    refresh_and_wait(args.dataset_id, args.name)
+    refresh_and_wait()

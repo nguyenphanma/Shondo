@@ -517,6 +517,7 @@ def initialize_data():
         'DTB9595',
         'LIT7272',
         'LIT9525',
+        'BANGKEO1'
     
     ]
 
@@ -1001,7 +1002,7 @@ def stock_from_warehouse(
     ECOM_SOURCE = "ECOM_SG"
     KDS_STORE = "KDS"
 
-    total_transfer_limit = 10000
+    total_transfer_limit = 12000
     total_transferred = 0
     ecom_from_general_transferred = 0
     kds_from_ecom_sg_transferred = 0
@@ -1219,26 +1220,22 @@ def stock_from_warehouse(
         print(f"{'='*80}\n")
 
     # =========================================================
-    # STEP 0: ECOM_SG → ECOM & KDS (BY NEED)
+    # STEP 0: ECOM_SG → ECOM ONLY (BY NEED)
+    #   - KDS được xử lý SAU physical stores (STEP 1.7) để ưu tiên stores trước
     # =========================================================
-    if df_warehouse_ecom is not None and not df_warehouse_ecom.empty and wh_ecom_limit > 0 and has_ecom_source_target:
+    if df_warehouse_ecom is not None and not df_warehouse_ecom.empty and wh_ecom_limit > 0 and has_ecom_store:
         if debug:
-            print("📦 STEP 0: ECOM_SG → ECOM & KDS (BY NEED)")
+            print("📦 STEP 0: ECOM_SG → ECOM (BY NEED)")
 
-        # lấy các (store, fdcode) cần cho ECOM hoặc KDS từ need_map
         ecom_need_items = [
             (store, msp, need)
             for (store, msp), need in need_remaining.items()
-            if (is_ecom_store(store) or is_kds_store(store)) and need > 0
+            if is_ecom_store(store) and need > 0
         ]
 
         for (to_store, msp, _) in ecom_need_items:
             if total_transferred >= total_transfer_limit or wh_ecom_limit <= 0:
                 break
-
-            # Chỉ bốc cho KDS những mã nằm trong kds_focus_set
-            if is_kds_store(to_store) and not is_kds_allowed(msp):
-                continue
 
             need_qty = need_remaining[(to_store, msp)]
             if need_qty <= 0:
@@ -1418,6 +1415,97 @@ def stock_from_warehouse(
                         f"   ✅ {msp}: ECOM_SG → {to_store} {give} "
                         f"(need={need_qty}, current={current}, max={max_cap}, room={room}, src={src_qty})"
                     )
+
+    # =========================================================
+    # STEP 1.7: ECOM_SG → KDS (BY NEED, SAU KHI ĐÃ ƯU TIÊN STORES)
+    #   - Chạy sau STEP 1.6 để đảm bảo physical stores được bốc trước KDS
+    # =========================================================
+    if has_kds_store and df_warehouse_ecom is not None and not df_warehouse_ecom.empty and wh_ecom_limit > 0:
+        if debug:
+            print("\n📦 STEP 1.7: ECOM_SG → KDS (BY NEED, ƯU TIÊN SAU STORES)")
+
+        kds_need_items = [
+            (store, msp, need)
+            for (store, msp), need in need_remaining.items()
+            if is_kds_store(store) and need > 0
+        ]
+
+        for (to_store, msp, _) in kds_need_items:
+            if total_transferred >= total_transfer_limit or wh_ecom_limit <= 0:
+                break
+
+            if not is_kds_allowed(msp):
+                continue
+
+            need_qty = need_remaining[(to_store, msp)]
+            if need_qty <= 0:
+                continue
+
+            current = max(0, store_stock[(to_store, msp)])
+            max_cap = get_max_stock(to_store)
+            room = max_cap - current
+            if room <= 0:
+                continue
+
+            src_qty = get_wh_qty(df_warehouse_ecom, msp)
+            if src_qty <= 0:
+                continue
+
+            give = min(src_qty, need_qty, room, wh_ecom_limit, total_transfer_limit - total_transferred)
+            if give > 0:
+                add_transfer(ECOM_SOURCE, to_store, msp, give)
+                wh_decrease(df_warehouse_ecom, msp, give)
+                wh_ecom_limit -= give
+
+                if debug:
+                    print(f"   ✅ {msp}: ECOM_SG → {to_store} {give} (need={need_qty}, room={room}, current={current})")
+
+    # =========================================================
+    # STEP 2.1: KHO TỔNG → ECOM (TOP-UP TỐI THIỂU 30)
+    #   - Chỉ top-up các fdcode ECOM thực sự đang kinh doanh (có trong filtered_df)
+    #   - Không giới hạn bởi wh_total_limit vì wh_qty đã giới hạn per-product
+    # =========================================================
+    ECOM_MIN_TOPUP = 30
+
+    # Tập hợp fdcode mà ECOM thực sự có trong filtered_df
+    ecom_fdcodes = {fdcode for (store, fdcode) in stock_map.keys() if store == ECOM_STORE}
+
+    if has_ecom_store and ecom_fdcodes and df_warehouse is not None and not df_warehouse.empty:
+        if debug:
+            print("\n📦 STEP 2.1: KHO TỔNG → ECOM (TOP-UP TỐI THIỂU 30)")
+
+        wh_left_topup = df_warehouse[
+            (df_warehouse["available"].fillna(0) > 0) &
+            (df_warehouse["fdcode"].isin(ecom_fdcodes))
+        ].copy()
+
+        for msp, group in wh_left_topup.groupby("fdcode"):
+            if total_transferred >= total_transfer_limit:
+                break
+
+            current_ecom = max(0, store_stock.get((ECOM_STORE, msp), 0))
+            if current_ecom >= ECOM_MIN_TOPUP:
+                continue
+
+            need_topup = ECOM_MIN_TOPUP - current_ecom
+            wh_qty = get_wh_qty(df_warehouse, msp)
+            if wh_qty <= 0:
+                continue
+
+            # wh_qty đã giới hạn per-product, không cần wh_total_limit ở đây
+            give = min(need_topup, wh_qty, total_transfer_limit - total_transferred)
+            if give > 0:
+                add_transfer("KHO TỔNG", ECOM_STORE, msp, give)
+                wh_decrease(df_warehouse, msp, give)
+
+                if debug:
+                    print(
+                        f"   ✅ {msp}: KHO TỔNG → ECOM +{give} "
+                        f"(tồn_ecom={current_ecom}, cần_thêm={need_topup}, kho={wh_qty})"
+                    )
+
+    # Tính lại wh_total_limit từ tồn thực tế cho STEP 2
+    wh_total_limit = int(df_warehouse["available"].fillna(0).sum()) if df_warehouse is not None else 0
 
     # =========================================================
     # STEP 2: KHO TỔNG → PHYSICAL STORES (EVEN DISTRIBUTION - LEFTOVER)

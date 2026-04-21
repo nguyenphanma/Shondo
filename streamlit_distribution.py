@@ -1,5 +1,7 @@
 import streamlit as st
+import importlib
 import distribution as dt  # File chứa các hàm tính toán
+importlib.reload(dt)        # Luôn reload để lấy code mới nhất khi Streamlit rerun
 import pandas as pd
 import show_distribution
 from ai_analyst import render_ai_analyst_tab, render_feedback_tab, save_proposals

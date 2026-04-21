@@ -16,7 +16,7 @@ port = os.getenv("DB_PORT", 3306)
 connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
 engine = create_engine(connection_string)
 
-file_path = Path(os.getenv('MA_SHONDO_DIR')) /"table_adjust.xlsx"
+file_path = Path(os.getenv('ma_shondo_path')) /"table_adjust.xlsx"
 
 # Đọc dữ liệu từ file Excel
 df_kpi = pd.read_excel(file_path, sheet_name="kpi")
