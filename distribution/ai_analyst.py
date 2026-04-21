@@ -30,7 +30,7 @@ GROQ_MODEL   = "llama-3.3-70b-versatile"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # File SQLite lưu feedback (tạo tự động nếu chưa có)
-FEEDBACK_DB_PATH = Path("feedback_loop.db")
+FEEDBACK_DB_PATH = Path(__file__).parent / "feedback_loop.db"
 
 # ══════════════════════════════════════════════
 # PHẦN 1 — AI ANALYST
