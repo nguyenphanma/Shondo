@@ -1,0 +1,31 @@
+name: Refresh Power BI Daily
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # 7h sáng GMT+7 = 0h UTC
+  workflow_dispatch:       # Cho phép chạy thủ công trên GitHub
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run refresh
+        env:
+          PBI_CLIENT_ID:     ${{ secrets.PBI_CLIENT_ID }}
+          PBI_CLIENT_SECRET: ${{ secrets.PBI_CLIENT_SECRET }}
+          PBI_TENANT_ID:     ${{ secrets.PBI_TENANT_ID }}
+          PBI_WORKSPACE_ID:  ${{ secrets.PBI_WORKSPACE_ID }}
+          PBI_DATASET_ID:    ${{ secrets.PBI_DATASET_ID }}
+        run: python refresh_powerbi.py
