@@ -24,8 +24,7 @@ jobs:
       - name: Run refresh
         env:
           PBI_CLIENT_ID:     ${{ secrets.PBI_CLIENT_ID }}
-          PBI_CLIENT_SECRET: ${{ secrets.PBI_CLIENT_SECRET }}
           PBI_TENANT_ID:     ${{ secrets.PBI_TENANT_ID }}
-          PBI_WORKSPACE_ID:  ${{ secrets.PBI_WORKSPACE_ID }}
-          PBI_DATASET_ID:    ${{ secrets.PBI_DATASET_ID }}
+          PBI_USERNAME:      ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD:      ${{ secrets.PBI_PASSWORD }}
         run: python refresh_powerbi.py
