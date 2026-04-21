@@ -1,3 +1,6 @@
+# Credentials (không push key lên GitHub)
+credentials/
+
 # Windows
 desktop.ini
 Thumbs.db
