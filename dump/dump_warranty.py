@@ -8,16 +8,7 @@ from core.db import get_engine
 from decimal import Decimal, InvalidOperation
 
 import pandas as pd
-
-# Load environment variables
-# ==================== CONFIG ====================
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "port": os.getenv("DB_PORT", 3306),
-}
+from sqlalchemy import text
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 DOWNLOAD_DIR = SCRIPT_DIR
@@ -68,13 +59,6 @@ MONEY_COLS = ["repair_cost", "repair_fee_customer", "spare_part_price"]
 INT_COLS = ["spare_part_qty"]
 
 # ==================== DATABASE ====================
-def create_db_engine():
-    connection_string = (
-        f"mysql+pymysql://{DB_CONFIG['user']}:{DB_CONFIG['password']}"
-        f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
-    )
-    return create_engine(connection_string)
-
 def create_table_if_not_exists(engine):
     create_table_sql = f"""
     CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
@@ -276,8 +260,8 @@ def main():
     print("🚀 NHANH.VN WARRANTY DATA PROCESSOR")
     print("=" * 60)
 
-    engine = create_db_engine()
-    print(f"✅ Connected to database: {DB_CONFIG['database']}")
+    engine = get_engine()
+    print("✅ Connected to database")
 
     create_table_if_not_exists(engine)
     print()

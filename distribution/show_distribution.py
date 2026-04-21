@@ -1,38 +1,22 @@
 import pandas as pd
-import os
 import numpy as np
 from datetime import datetime, timedelta
 import gspread_dataframe as gd
-from datetime import datetime
-import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from sqlalchemy import text
 from core.db import get_engine
 from core.sheets import get_client
 
 def show_stock():
-    load_dotenv()
     gs = get_client()
+    engine = get_engine()
 
     # Mở Google Sheets bằng Google Sheets ID
     sht = gs.open_by_key('1cYjexualwXFh5SQvD9-95FwMNSck4SBAeovKjcYWjW8')
     SHEET1 = 'RAW_STOCK'
     SHEET2 = 'RAW_PRODUCTS'
-
-    
-
-    # 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
-    # Lấy thông tin từ biến môi trường
-    host = os.getenv("DB_HOST")
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
-    database = os.getenv("DB_NAME")
-    port = os.getenv("DB_PORT", 3306)
-
-    # Tạo engine MySQL
-    connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-    engine = create_engine(connection_string)
 
     # TEMPLATE
     query_products_template = """ 

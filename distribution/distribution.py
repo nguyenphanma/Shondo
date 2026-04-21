@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from sqlalchemy import text
 from core.db import get_engine, get_ecom_engine
 import pandas as pd
 import os
@@ -264,22 +265,7 @@ def initialize_data():
         combined_df = pd.read_sql_query(text(query_sales_90_days), conn)
 
     # SALE ECOM 90 DAYS
-    # Lấy thông tin từ biến môi trường
-    host_ecom = os.getenv("DB_HOST_ECOM")
-    user_ecom = os.getenv("DB_USER_ECOM")
-    password_ecom = os.getenv("DB_PASSWORD_ECOM")
-    database_ecom = os.getenv("DB_NAME_ECOM")
-    port_ecom = os.getenv("DB_PORT_ECOM", 3306)
-
-    # Kết nối MySQL
-    connection_string_ecom = f"mysql+pymysql://{user_ecom}:{password_ecom}@{host_ecom}:{port_ecom}/{database_ecom}"
-
-    # Thêm pool_pre_ping=True và connect_args để tăng thời gian chờ
-    engine_ecom = create_engine(
-        connection_string_ecom,
-        pool_pre_ping=True,
-        connect_args={"connect_timeout": 30}  # tăng timeout từ mặc định (~10s) lên 20s
-    )
+    engine_ecom = get_ecom_engine()
 
     query_sales_90_days_ecom = """
         SELECT

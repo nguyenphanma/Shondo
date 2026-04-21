@@ -1,39 +1,21 @@
 import pandas as pd
 from datetime import datetime
-from sqlalchemy import create_engine, text
-import gspread
+from sqlalchemy import text
 import gspread_dataframe as gd
-import os
-from dotenv import load_dotenv
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.db import get_engine
+from core.sheets import get_client
 
-load_dotenv()
-# GOOGLE SHEET
-# Đường dẫn tới file JSON (đảm bảo tệp tồn tại)
-gs = gspread.service_account(Path(os.getenv('ma_shondo_path')) / 'mashondo.json')
-
-# Mở Google Sheets bằng Google Sheets ID
+gs = get_client()
 sht = gs.open_by_key('1w7PN9UXeDf38q7ZtnquCcbikv2mBuwTRrpl-bOzBMiI')
 SHEET1 = 'customers'
 
-# Thông tin kết nối MySQL
-# Kết nối MySQL
-
-
-# 🔗 Kết nối MySQL – tạo duy nhất 1 engine dùng xuyên suốt
-# Lấy thông tin từ biến môi trường
-host = os.getenv("DB_HOST")
-user = os.getenv("DB_USER")
-password = os.getenv("DB_PASSWORD")
-database = os.getenv("DB_NAME")
-port = os.getenv("DB_PORT", 3306)
-
-# Tạo engine MySQL
-connection_string = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-engine = create_engine(connection_string)
+engine = get_engine()
 
 query_customers = """
-    SELECT 
+    SELECT
         s.customer_id,
         c.name,
         c.mobile,
@@ -47,14 +29,14 @@ query_customers = """
     AND s.customer_id NOT IN (108248129, 122951605)
     AND s.customer_id IS NOT NULL
     AND MONTH(c.birthday) = 4
-    GROUP BY s.customer_id, 
-            c.name, 
-            c.mobile, 
+    GROUP BY s.customer_id,
+            c.name,
+            c.mobile,
             st.code_nhanh,
             c.birthday
     ORDER BY last_purchase_date DESC;
 """
-# Lấy dữ liệu bán hàng từ database
+
 with engine.connect() as conn:
     df_customers = pd.read_sql_query(text(query_customers), conn)
 

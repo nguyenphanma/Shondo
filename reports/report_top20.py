@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from sqlalchemy import text
 from core.db import get_engine
 from core.sheets import get_client
 
