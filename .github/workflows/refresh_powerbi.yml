@@ -9,8 +9,63 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Khi chạy thủ công: chạy tuần tự, mỗi report cách nhau 30s
+  all-reports:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+
+      - name: Company Performance
+        env:
+          PBI_CLIENT_ID: ${{ secrets.PBI_CLIENT_ID }}
+          PBI_TENANT_ID: ${{ secrets.PBI_TENANT_ID }}
+          PBI_USERNAME:  ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD:  ${{ secrets.PBI_PASSWORD }}
+        run: python refresh_powerbi.py --dataset-id 975914e1-e19c-4394-9956-912d63e07eef --name "Company Performance"
+
+      - name: Wait 30s
+        run: sleep 30
+
+      - name: Ecommerce Performance
+        env:
+          PBI_CLIENT_ID: ${{ secrets.PBI_CLIENT_ID }}
+          PBI_TENANT_ID: ${{ secrets.PBI_TENANT_ID }}
+          PBI_USERNAME:  ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD:  ${{ secrets.PBI_PASSWORD }}
+        run: python refresh_powerbi.py --dataset-id 6d703cb4-a24a-464c-88af-9c523461c94c --name "Ecommerce Performance"
+
+      - name: Wait 30s
+        run: sleep 30
+
+      - name: Sales Department Performance
+        env:
+          PBI_CLIENT_ID: ${{ secrets.PBI_CLIENT_ID }}
+          PBI_TENANT_ID: ${{ secrets.PBI_TENANT_ID }}
+          PBI_USERNAME:  ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD:  ${{ secrets.PBI_PASSWORD }}
+        run: python refresh_powerbi.py --dataset-id 48cad5fc-cc8c-4571-ba39-8f91d6970af6 --name "Sales Department Performance"
+
+      - name: Wait 30s
+        run: sleep 30
+
+      - name: Products Performance MKT
+        env:
+          PBI_CLIENT_ID: ${{ secrets.PBI_CLIENT_ID }}
+          PBI_TENANT_ID: ${{ secrets.PBI_TENANT_ID }}
+          PBI_USERNAME:  ${{ secrets.PBI_USERNAME }}
+          PBI_PASSWORD:  ${{ secrets.PBI_PASSWORD }}
+        run: python refresh_powerbi.py --dataset-id 8d3d1ce3-5c22-4137-9bfb-c361bcebd124 --name "Products Performance MKT"
+
+  # Khi chạy theo lịch: mỗi job chạy độc lập đúng giờ
   company-performance:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 0 * * *'
+    if: github.event.schedule == '0 0 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -29,7 +84,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 975914e1-e19c-4394-9956-912d63e07eef --name "Company Performance"
 
   ecommerce-performance:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 1 * * *'
+    if: github.event.schedule == '0 1 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -48,7 +103,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 6d703cb4-a24a-464c-88af-9c523461c94c --name "Ecommerce Performance"
 
   sales-performance:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+    if: github.event.schedule == '0 2 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -67,7 +122,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 48cad5fc-cc8c-4571-ba39-8f91d6970af6 --name "Sales Department Performance"
 
   products-performance:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 3 * * *'
+    if: github.event.schedule == '0 3 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
