@@ -23,7 +23,9 @@ def get_access_token():
         "password":   PASSWORD,
         "scope":      SCOPE,
     })
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"  Token error: {resp.status_code} - {resp.text}")
+        resp.raise_for_status()
     return resp.json()["access_token"]
 
 
