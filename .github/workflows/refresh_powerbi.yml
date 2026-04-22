@@ -2,10 +2,10 @@ name: Refresh Power BI Daily
 
 on:
   schedule:
-    - cron: "0 0 * * *"  # 7h GMT+7 - Company Performance
-    - cron: "0 1 * * *"  # 8h GMT+7 - Ecommerce Performance
-    - cron: "0 2 * * *"  # 9h GMT+7 - Sales Department Performance
-    - cron: "0 3 * * *"  # 10h GMT+7 - Products Performance MKT
+    - cron: "0 2 * * *"  # 9h GMT+7 - Company Performance
+    - cron: "0 3 * * *"  # 10h GMT+7 - Ecommerce Performance
+    - cron: "0 4 * * *"  # 11h GMT+7 - Sales Department Performance
+    - cron: "0 5 * * *"  # 12h GMT+7 - Products Performance MKT
   workflow_dispatch:
 
 jobs:
