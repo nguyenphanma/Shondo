@@ -65,7 +65,7 @@ jobs:
 
   # Khi chạy theo lịch: mỗi job chạy độc lập đúng giờ
   company-performance:
-    if: github.event.schedule == '0 0 * * *'
+    if: github.event.schedule == '0 2 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -84,7 +84,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 975914e1-e19c-4394-9956-912d63e07eef --name "Company Performance"
 
   ecommerce-performance:
-    if: github.event.schedule == '0 1 * * *'
+    if: github.event.schedule == '0 3 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -103,7 +103,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 6d703cb4-a24a-464c-88af-9c523461c94c --name "Ecommerce Performance"
 
   sales-performance:
-    if: github.event.schedule == '0 2 * * *'
+    if: github.event.schedule == '0 4 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -122,7 +122,7 @@ jobs:
         run: python refresh_powerbi.py --dataset-id 48cad5fc-cc8c-4571-ba39-8f91d6970af6 --name "Sales Department Performance"
 
   products-performance:
-    if: github.event.schedule == '0 3 * * *'
+    if: github.event.schedule == '0 5 * * *'
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
