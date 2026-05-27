@@ -32,7 +32,7 @@ query_data = """
             depot_id, 
             MAX(changed_at) AS max_changed_at
         FROM product_inventory_history
-        WHERE depot_id NOT IN (142410, 217633, 220636, 142408, 222877)
+        WHERE depot_id NOT IN (142410, 217633, 220636, 142408, 222877, 448734)
         GROUP BY product_id, depot_id
     ),
     stock_today AS (
@@ -51,7 +51,7 @@ query_data = """
         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
         WHERE 
             pih.available >= 1
-            AND pih.depot_id NOT IN (142410, 217633, 220636, 142408, 222877)
+            AND pih.depot_id NOT IN (142410, 217633, 220636, 142408, 222877, 448734)
             AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
     ),
     stock_last_change AS (

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "powerbi-modeling": {
+      "command": "C:\\Users\\ASUS\\.vscode\\extensions\\analysis-services.powerbi-modeling-mcp-0.4.0-win32-x64\\server\\powerbi-modeling-mcp.exe",
+      "args": ["--start", "--skip-confirmation"]
+    }
+  },
+  "permissions": {
+    "allow": [
+      "mcp__powerbi-modeling__measure_operations",
+      "mcp__powerbi-modeling__table_operations",
+      "mcp__powerbi-modeling__column_operations",
+      "mcp__powerbi-modeling__relationship_operations",
+      "mcp__powerbi-modeling__transaction_operations",
+      "mcp__powerbi-modeling__database_operations",
+      "mcp__powerbi-modeling__connection_operations",
+      "mcp__powerbi-modeling__dax_query_operations"
+    ]
+  }
+}

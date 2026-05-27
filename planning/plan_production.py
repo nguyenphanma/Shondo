@@ -57,7 +57,7 @@ query_data = """
             depot_id, 
             MAX(changed_at) AS max_changed_at
         FROM product_inventory_history
-        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877)
+        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877, 448734, 92162)
         GROUP BY product_id, depot_id
     ),
     stock_today AS (
@@ -76,7 +76,7 @@ query_data = """
         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
         WHERE 
             pih.available >= 1
-            AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877)
+            AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877, 448734, 92162)
             AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
     ),
     stock_last_change AS (
@@ -246,7 +246,7 @@ query_sales_90_days_ecom = """
     WHERE
         DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
         AND eo.status NOT IN ('cancelled', 'returned')
-        AND UPPER(os.name) <> 'BOXME'
+        AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
         AND eoi.product_sku <>''
     GROUP BY store,
              fdcode
@@ -314,7 +314,7 @@ df_target['month'] = df_target['month'].astype(int)
 # =========================
 # 0) THAM SỐ THÁNG ĐẶT HÀNG
 # =========================
-ORDER_MONTH = 4      # ví dụ: tháng 11
+ORDER_MONTH = 5     # ví dụ: tháng 11
 ORDER_YEAR  = 2026     # ví dụ: năm 2025
 
 # % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
@@ -394,6 +394,8 @@ print('Finished update data stock')
 worksheet_rp = sht.worksheet(SHEET2)
 data_order = worksheet_rp.get('E12:S200')
 df_order = pd.DataFrame(data_order[1:], columns=data_order[0])
+print('[DEBUG] df_order columns:', df_order.columns.tolist())
+print('[DEBUG] df_order shape:', df_order.shape)
 
 # Chuẩn hoá df_target
 df_target['kpi_revenue'] = pd.to_numeric(
@@ -430,7 +432,7 @@ data_raw_size = worksheet_raw_size.get_all_values()
 df_raw_size = pd.DataFrame(data_raw_size[1:], columns=data_raw_size[0])
 
 # Lọc đơn hàng hợp lệ & chuẩn hoá doanh thu
-df_order_filter = df_order[df_order['MẪU ĐƯỢC ĐẶT'].isin(['Được phép đặt', 'Mẫu mới'])].copy()
+df_order_filter = df_order[df_order['MSP'].notna() & (df_order['MSP'].astype(str).str.strip() != '')].copy()
 df_order_filter['Tổng Doanh Thu'] = pd.to_numeric(
     df_order_filter['Tổng Doanh Thu'].astype(str).str.replace(',', ''), errors='coerce'
 )
@@ -544,7 +546,7 @@ rev_top30['allocated_revenue'] = rev_top30['rev_share_in_top30'] * rev_top30['al
 # 3) Giá bán TB (AVG.Price) -> số lượng dự kiến từ ngân sách
 # =============================
 avg_price = (
-    df_order[df_order['MẪU ĐƯỢC ĐẶT'].isin(['Được phép đặt', 'Mẫu mới'])]
+    df_order[df_order['MSP'].notna() & (df_order['MSP'].astype(str).str.strip() != '')]
     .rename(columns={'MSP': 'default_code', 'Kênh bán': 'channel'})
     [['channel', 'default_code', 'AVG.Price']]
     .copy()

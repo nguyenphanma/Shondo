@@ -189,13 +189,7 @@ query_sales_2024= f"""
         )
         AND (
                 (
-                    YEAR(so.createdDateTime) = 2024
-                    AND DATE(so.createdDateTime) <= DATE_SUB(CURDATE(), INTERVAL (YEAR(CURDATE()) - 2024) YEAR)
-                )
-                OR
-                (
                     YEAR(so.createdDateTime) = 2025
-                    AND DATE(so.createdDateTime) <= DATE_SUB(CURDATE(), INTERVAL (YEAR(CURDATE()) - 2025) YEAR)
                 )
         )
     ),
@@ -251,7 +245,8 @@ query_sales_2024= f"""
     )
     SELECT *
     FROM base
-    WHERE (order_year = 2024 OR (order_year = 2025 AND store NOT IN ('TIKTOK', 'SHOPEE')))
+    WHERE
+    order_year = 2025 AND store NOT IN ('TIKTOK', 'SHOPEE')
     AND NOT (store = 'WEB' AND channelName <> 'Kho Lẻ');
 """
 
@@ -291,11 +286,8 @@ JOIN ecommerce_order_items eoi
     ON eoi.external_order_id = eo.external_order_id
 JOIN order_source os 
     ON eo.order_source_id = os.id
-WHERE (
-        (eo.order_date >= '2024-01-01' AND eo.order_date < DATE_ADD('2024-01-01', INTERVAL DAYOFYEAR(CURDATE()) DAY))
-        OR
-        (eo.order_date >= '2025-01-01' AND eo.order_date < DATE_ADD('2025-01-01', INTERVAL DAYOFYEAR(CURDATE()) DAY))
-      )
+WHERE 
+  YEAR(eo.order_date) = 2025
   AND eoi.product_sku NOT LIKE '%HOP%'
   AND eoi.product_sku NOT LIKE '%TUIRUT%'
   AND eoi.product_sku <> 'LIMAXCARD'
@@ -339,7 +331,7 @@ query_sales_ecom_2026 = f"""
 # Lấy dữ liệu bán hàng từ database
 with engine_ecom.connect() as conn:
     combined_df_ecom_2026 = pd.read_sql_query(text(query_sales_ecom_2026), conn)
-print("query sale_ecom 2024 day finished.")
+print("query sale_ecom 2026 day finished.")
 
 combined_df_ecom = pd.concat([combined_df_ecom_2024, combined_df_ecom_2026], ignore_index=True)
 combined_df_ecom = combined_df_ecom[combined_df_ecom['fdcode'] != ""]
@@ -359,9 +351,9 @@ combined_df_ecom_gr = combined_df_ecom_mer.groupby(['channel', 'store', 'categor
 
 df_total = pd.concat([current_df_gr, combined_df_ecom_gr], ignore_index=True)
 
-df_total_filter = df_total[df_total['category'].isin(['SANDALS', 'SNEAKERS', 
-                                                      'SLIDES', 'KID SANDALS', 'KID SNEAKERS'])]
+"""df_total_filter = df_total[df_total['category'].isin(['SANDALS', 'SNEAKERS', 
+                                                      'SLIDES', 'KID SANDALS', 'KID SNEAKERS'])]"""
 
 worksheet_sale = sht.worksheet(SHEET1)
 worksheet_sale.batch_clear(['A1:I'])
-gd.set_with_dataframe(worksheet_sale, df_total_filter)
+gd.set_with_dataframe(worksheet_sale, df_total)

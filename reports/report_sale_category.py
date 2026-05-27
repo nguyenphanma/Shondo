@@ -43,7 +43,7 @@ query_data = """
                 depot_id, 
                 MAX(changed_at) AS max_changed_at
             FROM product_inventory_history
-            WHERE depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 217633, 220636, 142408, 222877)
+            WHERE depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 217633, 220636, 142408, 222877, 448734, 92162)
             GROUP BY product_id, depot_id
         ),
 
@@ -63,7 +63,7 @@ query_data = """
             LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
             WHERE 
                 pih.available >= 1
-                AND pih.depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 217633, 220636, 142408, 222877)
+                AND pih.depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 217633, 220636, 142408, 222877, 448734, 92162)
                 AND DATE(pih.last_updated_at) = CURRENT_DATE() - INTERVAL 1 DAY
         ),
 
@@ -199,7 +199,7 @@ query_sales_90_days_ecom = """
     WHERE
         DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 180 DAY
         AND eo.status NOT IN ('cancelled', 'returned', 'Hủy bởi khách hàng')
-        AND UPPER(os.name) <> 'BOXME'
+        AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
         AND eoi.product_sku <>''
     GROUP BY store,
             fdcode

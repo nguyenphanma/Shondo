@@ -11,7 +11,7 @@ import pandas as pd
 from sqlalchemy import text
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-DOWNLOAD_DIR = SCRIPT_DIR
+DOWNLOAD_DIR = SCRIPT_DIR.parent
 
 TABLE_NAME = "warranty_history"
 
@@ -266,16 +266,16 @@ def main():
     create_table_if_not_exists(engine)
     print()
 
-    print(f"🔍 Searching for warranty files in: {SCRIPT_DIR}")
-    files = find_warranty_files(SCRIPT_DIR, pattern="dump_warranty*.xlsx")
+    print(f"🔍 Searching for warranty files in: {DOWNLOAD_DIR}")
+    files = find_warranty_files(DOWNLOAD_DIR, pattern="dump_warranty*.xlsx")
 
     if not files:
         print("❌ No warranty files found!")
         print(f"   Looking for files matching: dump_warranty*.xlsx")
-        print(f"   In directory: {SCRIPT_DIR}")
+        print(f"   In directory: {DOWNLOAD_DIR}")
         print()
         print("💡 Please ensure you have the Excel file in the same folder as this script")
-        print(f"   Expected path example: {SCRIPT_DIR / 'dump_warranty.xlsx'}")
+        print(f"   Expected path example: {DOWNLOAD_DIR / 'dump_warranty.xlsx'}")
         return
 
     print(f"📁 Found {len(files)} file(s):")

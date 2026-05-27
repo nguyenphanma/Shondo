@@ -36,7 +36,7 @@ with engine.connect() as conn:
     df_order_tracking = pd.read_sql_query(text(query_order_tracking), conn)
 
 worksheet_order = sht.worksheet(SHEET2)
-worksheet_order.batch_clear(['A1:K'])
+worksheet_order.batch_clear(['A1:Y'])
 gd.set_with_dataframe(worksheet_order, df_order_tracking)
 
 order_gr = df_order_tracking.groupby(['channel', 'category', 'subcategory', 'default_code']).agg({
@@ -62,7 +62,7 @@ max_change AS (
         depot_id, 
         MAX(changed_at) AS max_changed_at
     FROM product_inventory_history
-    WHERE depot_id NOT IN (142410, 101011, 111753, 217633, 220636, 142408, 222877, 125224, 217642, 218091, 111752)
+    WHERE depot_id NOT IN (142410, 101011, 111753, 217633, 220636, 142408, 222877, 125224, 217642, 218091, 111752, 448734, 92162)
     GROUP BY product_id, depot_id
 ),
 
@@ -82,7 +82,7 @@ stock_today AS (
     LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
     WHERE 
         pih.available >= 1
-        AND pih.depot_id NOT IN (142410, 101011, 111753, 217633, 220636, 142408, 222877, 125224, 217642, 218091, 111752)
+        AND pih.depot_id NOT IN (142410, 101011, 111753, 217633, 220636, 142408, 222877, 125224, 217642, 218091, 111752, 448734, 92162)
         AND DATE(pih.last_updated_at) = CURRENT_DATE() - INTERVAL 1 DAY
 ),
 
@@ -383,7 +383,7 @@ WHERE
         DATE(eo.order_date) BETWEEN DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01')
                                AND DATE_SUB(CURDATE() - INTERVAL 1 DAY, INTERVAL 1 YEAR)
     )
-    AND UPPER(os.name) <> 'BOXME'
+    AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
     AND eoi.product_sku <>''
     AND eoi.product_sku NOT LIKE '%HOP%'
     AND eoi.product_sku NOT LIKE '%TUIRUT%'

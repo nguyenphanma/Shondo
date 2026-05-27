@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.db import get_engine
 
 year = '2026'
-month = '04'
+month = '05'
 
 engine = get_engine()
 

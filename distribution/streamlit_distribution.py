@@ -1,7 +1,11 @@
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))   # project root (for core/)
-sys.path.insert(0, str(Path(__file__).parent))          # distribution/ (for siblings)
+_root = Path(__file__).resolve().parent.parent
+_dist = Path(__file__).resolve().parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+if str(_dist) not in sys.path:
+    sys.path.insert(0, str(_dist))
 from core.db import get_engine
 import streamlit as st
 import importlib
@@ -171,7 +175,7 @@ if "cfg_stock_from_wh" not in st.session_state:
 st.sidebar.title("Chọn Chức Năng")
 page = st.sidebar.selectbox(
     "Đi tới trang:",
-    ["Distribution Task", "🤖 AI Analyst", "📊 Feedback Loop"]
+    ["Distribution Task", "📦 Nợ Đơn", "🤖 AI Analyst", "📊 Feedback Loop"]
 )
 
 if page == "Distribution Task":
@@ -457,7 +461,7 @@ if page == "Distribution Task":
                                     ("Rút Hàng Theo Danh Sách", sanitize_for_streamlit(withdraw_result_df))
                                 )
                                 st.success("✅ Đã thực hiện rút hàng thành công!")
-                                n_saved = save_proposals(transfer_df, session_id="boc_ton")
+                                n_saved = save_proposals(withdraw_result_df, session_id="boc_ton")
                                 st.caption(f"💾 Đã lưu {n_saved} đề xuất vào Feedback Loop")
                                 
                                 # Hiển thị kết quả chi tiết
@@ -595,6 +599,284 @@ if False:  # ← đây chỉ là placeholder để IDE không báo lỗi, xóa d
 
 # ── TRANG AI ANALYST ──────────────────────────────────────────────
 # Paste đoạn này vào cuối streamlit_distribution.py:
+
+elif page == "📦 Nợ Đơn":
+    from datetime import date as _date
+    from stock.stock_pen_service import (
+        check_new_movements, run_update_stock_pen,
+        insert_orders, get_existing_order_months,
+        get_order_template_bytes, parse_order_template,
+        delete_orders_by_month, get_orders_detail, delete_orders_by_ids,
+    )
+
+    st.title("Quản lý Nợ Đơn")
+    tab_update, tab_insert, tab_manage = st.tabs([
+        "Cập nhật từ sản xuất", "Nhập đơn đặt hàng", "Xem & Xóa đơn"
+    ])
+
+    # ── Tab 1: Cập nhật từ movements ──────────────────────────────
+    with tab_update:
+        engine = get_engine()
+        col_l, col_r = st.columns([2, 1])
+        with col_l:
+            from_date_val = st.date_input(
+                "Tính lại từ ngày (FROM_DATE):",
+                value=_date(2026, 5, 1),
+                key="sp_from_date"
+            )
+        with col_r:
+            st.write("")
+            st.write("")
+            check_btn = st.button("Kiểm tra dữ liệu mới", key="sp_check")
+
+        if check_btn or st.session_state.get("sp_check_result"):
+            if check_btn:
+                with st.spinner("Đang kiểm tra..."):
+                    result = check_new_movements(engine, str(from_date_val))
+                st.session_state["sp_check_result"] = result
+
+            result = st.session_state["sp_check_result"]
+
+            if result["has_new_data"]:
+                st.warning(
+                    f"Có dữ liệu sản xuất chưa được cập nhật vào stock_pen "
+                    f"(tổng {result['total_units']:,} units, "
+                    f"tháng {result['covered_months']})."
+                )
+            else:
+                st.success("stock_pen đã khớp với movements — không có dữ liệu mới.")
+
+            with st.expander("So sánh tổng movements vs stock_pen", expanded=True):
+                if not result["df_compare"].empty:
+                    st.dataframe(result["df_compare"], use_container_width=True, hide_index=True)
+                    st.caption(
+                        "Lưu ý: so sánh theo TỔNG (không per-channel) vì "
+                        "phân bổ cross-channel làm lệch số từng kênh."
+                    )
+
+            with st.expander("Movements theo kênh (tham khảo)", expanded=False):
+                if "df_mv_by_channel" in result and not result["df_mv_by_channel"].empty:
+                    st.dataframe(result["df_mv_by_channel"], use_container_width=True, hide_index=True)
+
+            with st.expander("Chi tiết movements theo ngày", expanded=result["has_new_data"]):
+                if not result["df_daily"].empty:
+                    st.dataframe(result["df_daily"], use_container_width=True)
+                else:
+                    st.info("Không có movements trong khoảng thời gian này.")
+
+        st.divider()
+
+        if st.button("Cập nhật stock_pen từ sản xuất", type="primary", key="sp_update"):
+            with st.spinner("Đang cập nhật..."):
+                res = run_update_stock_pen(engine, str(from_date_val))
+            if res["success"]:
+                st.success(
+                    f"Cập nhật hoàn thành — tháng {res['covered_months']}, "
+                    f"{res['updated_rows']} dòng FIFO, "
+                    f"{res['ngoai_inserted']} fdcode NGOÀI ĐƠN, "
+                    f"tổng {res['total_mv']:,} units."
+                )
+                st.session_state.pop("sp_check_result", None)
+            else:
+                st.error(res.get("message", "Lỗi không xác định."))
+
+    # ── Tab 2: Nhập đơn đặt hàng từ Excel ────────────────────────
+    with tab_insert:
+        engine = get_engine()
+
+        # Download template
+        st.write("Điền vào file template rồi upload lên để nhập đơn mới vào stock_pen.")
+        st.download_button(
+            label="Tải template Excel",
+            data=get_order_template_bytes(),
+            file_name="template_don_dat_hang.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="sp_template_download"
+        )
+        st.caption("Template gồm 5 cột: **Kênh** (KDC/KDS/ECOM) | **Mã hàng** | **Tháng đặt** | **Năm đặt** | **SL đặt**")
+
+        st.divider()
+
+        uploaded = st.file_uploader(
+            "Upload file đã điền:", type=["xlsx", "xls"], key="sp_excel_upload"
+        )
+
+        if uploaded:
+            try:
+                with st.spinner("Đang đọc và kiểm tra file..."):
+                    df_orders, not_found = parse_order_template(uploaded, engine)
+
+                st.success(f"Đọc được {len(df_orders):,} dòng.")
+
+                if not_found:
+                    st.warning(f"Không tìm thấy thông tin sản phẩm cho {len(not_found)} mã: {not_found[:10]}"
+                               + (" ..." if len(not_found) > 10 else ""))
+
+                # Tổng quan tháng/kênh trong file
+                file_months = (
+                    df_orders.groupby(['year_ord', 'month_ord', 'channel'], as_index=False)
+                    .agg(so_dong=('fdcode', 'count'), tong_sl_dat=('qty_ord', 'sum'))
+                    .rename(columns={'year_ord': 'Năm', 'month_ord': 'T.Đặt',
+                                     'channel': 'Kênh', 'so_dong': 'Số dòng',
+                                     'tong_sl_dat': 'Tổng SL đặt'})
+                )
+                st.write("**Tháng/kênh trong file:**")
+                st.dataframe(sanitize_for_streamlit(file_months), use_container_width=True, hide_index=True)
+
+                with st.expander("Xem trước (20 dòng đầu — đã enrich category/size)"):
+                    preview_cols = ['channel', 'fdcode', 'default_code', 'category',
+                                    'subcategory', 'size', 'month_ord', 'year_ord', 'qty_ord']
+                    st.dataframe(
+                        sanitize_for_streamlit(df_orders[preview_cols].head(20)),
+                        use_container_width=True
+                    )
+
+                with st.expander("Đơn đang có trong DB (theo tháng/kênh)", expanded=False):
+                    st.dataframe(
+                        sanitize_for_streamlit(get_existing_order_months(engine)),
+                        use_container_width=True, hide_index=True
+                    )
+
+                st.divider()
+
+                mode = st.radio(
+                    "Chế độ nhập:",
+                    options=["append", "replace_month"],
+                    format_func=lambda x: (
+                        "Thêm vào — chỉ INSERT, không xóa đơn cũ"
+                        if x == "append"
+                        else "Thay thế tháng — xóa đúng tháng/kênh có trong file rồi INSERT lại"
+                    ),
+                    key="sp_insert_mode"
+                )
+
+                if mode == "replace_month":
+                    combos = df_orders[['year_ord', 'month_ord', 'channel']].drop_duplicates()
+                    st.warning(
+                        f"Sẽ xóa **{len(combos)} tổ hợp** (năm/tháng/kênh) trước khi nhập: "
+                        + ", ".join(
+                            f"Năm {int(r.year_ord)} T{int(r.month_ord)} {r.channel}"
+                            for _, r in combos.iterrows()
+                        )
+                    )
+                else:
+                    st.info("Chế độ THÊM VÀO: đơn cũ giữ nguyên, chỉ insert thêm dòng mới.")
+
+                confirm = st.checkbox("Xác nhận thực hiện", key="sp_confirm_insert")
+                if st.button("Nhập vào DB", type="primary", disabled=not confirm, key="sp_insert_btn"):
+                    with st.spinner("Đang nhập..."):
+                        res = insert_orders(engine, df_orders, replace_month=(mode == "replace_month"))
+                    st.success(
+                        f"Hoàn thành — đã nhập {res['inserted']:,} dòng"
+                        + (f", xóa {res['deleted']:,} dòng cũ." if mode == "replace_month" else ".")
+                    )
+
+            except Exception as e:
+                st.error(f"Lỗi: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+    # ── Tab 3: Xem & Xóa đơn ──────────────────────────────────────
+    with tab_manage:
+        engine = get_engine()
+
+        if st.button("Tải lại danh sách", key="sp_reload_orders"):
+            st.session_state.pop("sp_order_months", None)
+
+        if "sp_order_months" not in st.session_state:
+            st.session_state["sp_order_months"] = get_existing_order_months(engine)
+
+        df_months = st.session_state["sp_order_months"].rename(columns={
+            'year_ord': 'Năm', 'month_ord': 'T.Đặt', 'channel': 'Kênh',
+            'so_dong': 'Số dòng', 'tong_sl_dat': 'Tổng SL đặt', 'tong_da_tra': 'Đã trả'
+        })
+        df_months['Có thể xóa'] = df_months['Đã trả'] == 0
+
+        st.write("**Đơn đặt hàng hiện có trong DB:**")
+        st.dataframe(sanitize_for_streamlit(df_months), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.write("**Xóa đơn theo tháng/kênh:**")
+
+        raw = st.session_state["sp_order_months"]
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            years = sorted(raw['year_ord'].unique().tolist(), reverse=True)
+            sel_year = st.selectbox("Năm", years, key="sp_del_year")
+        with col2:
+            months_avail = sorted(
+                raw[raw['year_ord'] == sel_year]['month_ord'].unique().tolist()
+            )
+            sel_month = st.selectbox("Tháng đặt", months_avail, key="sp_del_month")
+        with col3:
+            channels_avail = sorted(
+                raw[(raw['year_ord'] == sel_year) & (raw['month_ord'] == sel_month)]['channel'].unique().tolist()
+            )
+            sel_channel = st.selectbox("Kênh", channels_avail, key="sp_del_channel")
+
+        # Tải chi tiết từng dòng
+        detail_key = f"sp_detail_{sel_year}_{sel_month}_{sel_channel}"
+        if detail_key not in st.session_state:
+            st.session_state[detail_key] = get_orders_detail(engine, sel_year, sel_month, sel_channel)
+
+        df_detail = st.session_state[detail_key]
+        if df_detail.empty:
+            st.info("Không có dòng nào.")
+        else:
+            da_tra_total = int(df_detail['da_tra'].sum())
+
+            # Phân loại dòng có thể xóa / không thể xóa
+            df_deletable   = df_detail[df_detail['da_tra'] == 0].copy()
+            df_has_deliver = df_detail[df_detail['da_tra'] >  0].copy()
+
+            if not df_has_deliver.empty:
+                st.warning(
+                    f"{len(df_has_deliver)} dòng đã có trả hàng — không thể chọn xóa."
+                )
+
+            st.write(f"**Chi tiết đơn — Năm {sel_year} T{sel_month} {sel_channel}** "
+                     f"({len(df_detail)} dòng, {len(df_deletable)} có thể xóa):")
+
+            # Hiển thị toàn bộ với cột da_tra để user biết dòng nào đã trả
+            display_detail = df_detail.rename(columns={
+                'fdcode': 'Mã hàng', 'default_code': 'Mã SP cha', 'size': 'Size',
+                'qty_ord': 'SL đặt', 'da_tra': 'Đã trả', 'order_pen': 'Còn nợ'
+            })
+            st.dataframe(sanitize_for_streamlit(display_detail.drop(columns=['id'])),
+                         use_container_width=True, hide_index=True)
+
+            if df_deletable.empty:
+                st.error("Tất cả dòng đều đã có trả hàng — không thể xóa. Dùng 'Thay thế tháng' khi upload đơn mới.")
+            else:
+                st.divider()
+                # Multiselect chọn dòng cần xóa (theo fdcode — dòng chưa có trả)
+                fdcode_options = df_deletable['fdcode'].tolist()
+                sel_fdcodes = st.multiselect(
+                    f"Chọn mã hàng cần xóa ({len(fdcode_options)} dòng chưa có trả hàng):",
+                    options=fdcode_options,
+                    default=[],
+                    key="sp_sel_fdcodes"
+                )
+
+                col_a, col_b = st.columns([1, 2])
+                with col_a:
+                    if st.button("Xóa tất cả dòng chưa trả", key="sp_delete_all_btn"):
+                        ids = df_deletable['id'].tolist()
+                        res = delete_orders_by_ids(engine, ids)
+                        st.success(f"Đã xóa {res['deleted']} dòng.")
+                        st.session_state.pop(detail_key, None)
+                        st.session_state.pop("sp_order_months", None)
+                        st.rerun()
+                with col_b:
+                    if sel_fdcodes:
+                        ids_sel = df_deletable[df_deletable['fdcode'].isin(sel_fdcodes)]['id'].tolist()
+                        if st.button(f"Xóa {len(ids_sel)} dòng đã chọn", type="primary", key="sp_delete_sel_btn"):
+                            res = delete_orders_by_ids(engine, ids_sel)
+                            st.success(f"Đã xóa {res['deleted']} dòng"
+                                       + (f", bỏ qua {res['skipped']} dòng đã có trả." if res['skipped'] else "."))
+                            st.session_state.pop(detail_key, None)
+                            st.session_state.pop("sp_order_months", None)
+                            st.rerun()
 
 elif page == "🤖 AI Analyst":
     render_ai_analyst_tab(

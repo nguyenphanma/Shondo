@@ -50,7 +50,7 @@ query_data = """
                 depot_id, 
                 MAX(changed_at) AS max_changed_at
             FROM product_inventory_history
-            WHERE depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 100906, 217633, 220636, 142408, 222877, 217642, 202374, 218091)
+            WHERE depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 100906, 217633, 220636, 142408, 222877, 217642, 202374, 218091, 448734, 92162)
             GROUP BY product_id, depot_id
         ),
 
@@ -70,7 +70,7 @@ query_data = """
             LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
             WHERE 
                 pih.available >= 1
-                AND pih.depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 100906, 217633, 220636, 142408, 222877, 217642, 202374, 218091)
+                AND pih.depot_id NOT IN (142410, 111752, 101011, 125224, 111753, 111754, 100906, 217633, 220636, 142408, 222877, 217642, 202374, 218091, 448734, 92162)
                 AND DATE(pih.last_updated_at) = CURRENT_DATE() - INTERVAL 1 DAY
         ),
 
@@ -138,6 +138,7 @@ df_stock_gr = df_stock_fn.groupby(['channel', 'store', 'default_code', 'subcateg
 }).reset_index()
 
 df_stock_gr['store'] = df_stock_gr['store'].str.replace('ECOM2', 'ECOM')
+df_stock_gr = df_stock_gr[~df_stock_gr['subcategory'].isin(['BAGS'])]
 
 # Số lượng đã bán tháng hiện tại
 query_sales_current = f"""
@@ -282,7 +283,7 @@ SELECT
     WHERE
         DATE(eo.order_date) BETWEEN DATE('{date_start}') AND DATE('{date_end}')
         AND eo.status NOT IN ('cancelled', 'returned')
-        AND UPPER(os.name) <> 'BOXME'
+        AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
         AND eoi.product_sku <>''
     GROUP BY channel,
              store,

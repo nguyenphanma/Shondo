@@ -52,7 +52,7 @@ def initialize_data():
                         depot_id, 
                         MAX(changed_at) AS max_changed_at
                     FROM product_inventory_history
-                    WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091)
+                    WHERE depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091, 448734, 92162)
                     GROUP BY product_id, depot_id
                 ),
 
@@ -72,7 +72,7 @@ def initialize_data():
                     LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
                     WHERE 
                         pih.available >= 1
-                        AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091)
+                        AND pih.depot_id NOT IN (110819, 111154, 101011, 111753, 125224, 142410, 217633, 217642, 110826, 111155, 222877, 218091, 448734, 92162)
                         AND DATE(pih.last_updated_at) = CURRENT_DATE() - INTERVAL 1 DAY
                 ),
 
@@ -225,7 +225,7 @@ def initialize_data():
         WHERE
             DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
             AND eo.status NOT IN ('cancelled', 'returned')
-            AND UPPER(os.name) <> 'BOXME'
+            AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
             AND eoi.product_sku <>''
         GROUP BY store,
                 fdcode
@@ -1920,7 +1920,7 @@ def withdraw_from_stores(withdraw_df, df_merge, df_warehouse=None, df_warehouse_
         store_normalized = normalize_store_name(store_name)
         
         for priority_store in priority_groups[1]:
-            if priority_store in store_normalized or store_normalized in priority_store:
+            if priority_store in store_normalized:
                 return 1
         
         for priority_store in priority_groups[2]:

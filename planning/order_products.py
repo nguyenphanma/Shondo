@@ -1,8 +1,8 @@
+import calendar
 import pandas as pd
 import numpy as np
-from datetime import datetime, date
+from datetime import date
 import gspread_dataframe as gd
-import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -11,39 +11,53 @@ from core.queries import get_product_template
 from core.db import get_engine, get_ecom_engine
 from core.sheets import get_client
 
-gs = get_client()
+gs  = get_client()
 sht = gs.open_by_key('1U-dcqwnDrgkQjPndtvszZfZIBSEYx0kPKm0f-ud8KFg')
-SHEET1 = 'RAW_SEMI'
-SHEET2 = 'ORDER'
-SHEET3 = 'LIST_ORDER'
-SHEET4 = 'SEMI_TOP20'
-SHEET5 = 'RAW_ORDER_NEW'
-SHEET6 = 'RAW_SIZE'
-SHEET7 = 'RAW_STOCK'
-SHEET8 = 'RAW_PRODUCTS'
-SHEET9 = 'STOCK_PEN'
-SHEET10 ='TARGET_2025'
+SHEET3  = 'LIST_ORDER'
+SHEET4  = 'SEMI_TOP20'
+SHEET7  = 'RAW_STOCK'
+SHEET8  = 'RAW_PRODUCTS'
+SHEET9  = 'STOCK_PEN'
 SHEET11 = 'REPORT_ORDER'
 
-engine = get_engine()
+TARGET_SHEET_KEY  = '1aFDuIMWZvW2dBIJsUpWgE4XUyIFfW4wFqq4Undhoyfw'
+TARGET_SHEET_NAME = 'UNPIVOT_TARGET'
 
-def channel(code):
-    if code in ('KHO ECOM', 'ECOM2', 'ECOM','ECOM SG', "KHO BOXME"):
-        return 'ECOM'
-    if code in ('KHO SỈ', 'KDS'):
-        return 'KDS'
-    else:
-        return 'KDC'
+engine      = get_engine()
+engine_ecom = get_ecom_engine()
 
-df_products_template = get_product_template(engine)
-df_products_template['launch_date'] = pd.to_datetime(df_products_template['launch_date'])
+# ==========================================
+# THAM SỐ
+# ==========================================
+ORDER_MONTH    = 8           # tháng cần bán (đặt hàng trước 3 tháng)
+ORDER_YEAR     = 2026
+METRIC_FILTER  = 'SL kì vọng'  # giá trị cột metric trong UNPIVOT_TARGET ('SL kì vọng' hoặc 'Dthu dự tính')
+SAFETY_FACTOR  = {'KDS': 2.0, 'KDC': 3.0, 'ECOM': 2.5}  # tồn đầu kỳ = target × hệ số theo kênh
+MIN_ORDER_CODE = 1000         # tổng đặt tối thiểu mỗi mã (tất cả kênh)
 
 category_setup = ['SANDALS', 'SNEAKERS', 'SLIDES', 'KID SANDALS', 'KID SNEAKERS']
 
-# Truy vấn ngày tồn kho lớn nhất và dữ liệu tương ứng
-query_data = """
+
+def map_channel(code):
+    if code in ('KHO ECOM', 'ECOM2', 'ECOM', 'ECOM SG', 'KHO BOXME'):
+        return 'ECOM'
+    if code in ('KHO SỈ', 'KDS'):
+        return 'KDS'
+    return 'KDC'
+
+
+# ==========================================
+# 1. PRODUCT TEMPLATE
+# ==========================================
+df_products_template = get_product_template(engine)
+df_products_template['fdcode'] = df_products_template['fdcode'].str.upper()
+
+# ==========================================
+# 2. TỒN KHO
+# ==========================================
+query_stock = """
     WITH category_tree AS (
-        SELECT 
+        SELECT
             c1.external_category_id,
             c1.name,
             c2.name AS parent_name
@@ -52,16 +66,13 @@ query_data = """
         WHERE c2.name IS NOT NULL
     ),
     max_change AS (
-        SELECT 
-            product_id, 
-            depot_id, 
-            MAX(changed_at) AS max_changed_at
+        SELECT product_id, depot_id, MAX(changed_at) AS max_changed_at
         FROM product_inventory_history
-        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877)
+        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877, 448734, 92162)
         GROUP BY product_id, depot_id
     ),
     stock_today AS (
-        SELECT 
+        SELECT
             st.code_nhanh store,
             pih.depot_id AS depot_id_nhanh,
             pih.product_id,
@@ -74,13 +85,12 @@ query_data = """
         LEFT JOIN stores AS st ON st.depot_id_nhanh = pih.depot_id
         LEFT JOIN products AS ps ON ps.product_id = pih.product_id
         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
-        WHERE 
-            pih.available >= 1
-            AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877)
-            AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
+        WHERE pih.available >= 1
+          AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 222877, 448734, 92162)
+          AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
     ),
     stock_last_change AS (
-        SELECT 
+        SELECT
             st.code_nhanh store,
             pih.depot_id AS depot_id_nhanh,
             pih.product_id,
@@ -90,16 +100,16 @@ query_data = """
             pih.available,
             pih.changed_at
         FROM product_inventory_history AS pih
-        JOIN max_change mc 
-            ON pih.product_id = mc.product_id 
-            AND pih.depot_id = mc.depot_id 
+        JOIN max_change mc
+            ON pih.product_id = mc.product_id
+            AND pih.depot_id = mc.depot_id
             AND pih.changed_at = mc.max_changed_at
         LEFT JOIN (
-            SELECT DISTINCT product_id, depot_id_nhanh 
+            SELECT DISTINCT product_id, depot_id_nhanh
             FROM stock_today
-        ) AS st_today 
+        ) AS st_today
             ON pih.product_id = st_today.product_id
-            AND pih.depot_id = st_today.depot_id_nhanh
+            AND pih.depot_id  = st_today.depot_id_nhanh
         LEFT JOIN products AS ps ON ps.product_id = pih.product_id
         LEFT JOIN stores AS st ON st.depot_id_nhanh = pih.depot_id
         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
@@ -109,66 +119,61 @@ query_data = """
     UNION ALL
     SELECT * FROM stock_last_change
 """
-# Lấy dữ liệu tồn kho theo ngày lớn nhất
+
 with engine.connect() as conn:
-    df_stock = pd.read_sql_query(text(query_data), conn)
+    df_stock = pd.read_sql_query(text(query_stock), conn)
 print('Finished query stock')
 
-df_stock['channel'] = df_stock['store'].apply(channel)
+df_stock['channel'] = df_stock['store'].apply(map_channel)
 df_stock = pd.merge(df_stock, df_products_template[['fdcode', 'default_code']], on='fdcode', how='left')
 
-df_stock_filter = df_stock[df_stock['category'].isin(category_setup)]
-df_stock_gr = df_stock_filter.groupby(['channel', 'category', 'default_code']).agg({
-    'available':'sum'
-}).reset_index()
+df_stock_fdcode = (
+    df_stock[df_stock['category'].isin(category_setup)]
+    .groupby(['channel', 'fdcode', 'default_code', 'subcategory', 'category'], as_index=False)
+    .agg({'available': 'sum'})
+)
 
-query_order_tracking = """
-    SELECT * FROM stock_pen
-"""
-# Lấy dữ liệu bán hàng từ database
+# ==========================================
+# 3. ĐƠN HÀNG ĐANG VỀ (ORDER PEN)
+# ==========================================
 with engine.connect() as conn:
-    df_order_tracking = pd.read_sql_query(text(query_order_tracking), conn)
+    df_order_tracking = pd.read_sql_query(text("SELECT * FROM stock_pen"), conn)
 print('Finished query order tracking')
+
 worksheet_order_tracking = sht.worksheet(SHEET9)
 worksheet_order_tracking.clear()
 gd.set_with_dataframe(worksheet_order_tracking, df_order_tracking)
-print('Finished update order tracking')
+print('Updated STOCK_PEN')
 
-df_order_gr = df_order_tracking.groupby(['channel', 'category', 'subcategory','default_code']).agg({
-    'qty_ord':'sum',
-    'qty_delivered_by_manu':'sum',
-    'order_pen':'sum'
-}).reset_index()
+df_order_pen = (
+    df_order_tracking.groupby(['channel', 'fdcode'], as_index=False)
+    .agg({'order_pen': 'sum'})
+)
 
-# SALE 3 THÁNG GẦN NHẤT
-query_sales_90_days = """
+# ==========================================
+# 4. DOANH SỐ 90 NGÀY – KDC / KDS
+# ==========================================
+query_sales_90 = """
     WITH pt AS (
-        SELECT 
+        SELECT
             ps.external_product_id,
             ps.product_id,
             ps.code AS default_code,
             c1.name AS subcategory,
             c2.name AS category
         FROM categories c1
-        LEFT JOIN categories c2
-            ON c1.parent_id = c2.category_id
-        LEFT JOIN products ps 
-            ON ps.category_id = c1.external_category_id AND ps.parent_id = -2
-        WHERE c2.name IS NOT NULL
-        AND ps.parent_id IS NOT NULL
+        LEFT JOIN categories c2 ON c1.parent_id = c2.category_id
+        LEFT JOIN products ps ON ps.category_id = c1.external_category_id AND ps.parent_id = -2
+        WHERE c2.name IS NOT NULL AND ps.parent_id IS NOT NULL
     ),
     main_data AS (
-        SELECT 
-            UPPER(CASE 
+        SELECT
+            UPPER(CASE
                 WHEN sc.sale_channel_name = 'Admin' AND st.code_nhanh = 'KHO SỈ' THEN 'KDS'
                 WHEN so.channelName = 'KHO LẺ' THEN st.code_nhanh
-                WHEN so.saleChannel = 1 THEN 'ECOM'
-                WHEN so.saleChannel IN (2, 10) THEN 'ECOM'
-                WHEN so.saleChannel IN (20, 21, 46) THEN 'ECOM'
-                WHEN so.saleChannel = 41 THEN 'ECOM'
-                WHEN so.saleChannel = 42 THEN 'ECOM'
-                WHEN so.saleChannel = 48 THEN 'ECOM'
-            ELSE 'KHO LỖI' END) store,
+                WHEN so.saleChannel IN (1, 2, 10, 20, 21, 41, 42, 46, 48) THEN 'ECOM'
+                ELSE 'KHO LỖI'
+            END) store,
             so.channelName,
             COALESCE(pt.category, 'BAGS') AS category,
             COALESCE(pt.subcategory, 'BAGS') AS subcategory,
@@ -178,655 +183,540 @@ query_sales_90_days = """
             soi.price,
             soi.discount,
             so.relatedBillId,
-            so.saleChannel,
-            ps2.launch_date,
-            ps2.price price_retail
+            ps2.launch_date
         FROM sale_order so
-        LEFT JOIN sale_order_items soi 
-            ON so.orderId = soi.sale_order_id
-        LEFT JOIN products ps2
-            ON ps2.external_product_id = soi.external_product_id
-        LEFT JOIN pt
-            ON pt.external_product_id = ps2.parent_id
-        LEFT JOIN stores st 
-            ON st.depot_id_nhanh = so.depotId
-        LEFT JOIN sale_channel sc
-            ON sc.id = so.channel
-        WHERE 
-            so.status = 'Success'
-            AND DATE(so.createdDateTime) >= CURRENT_DATE() - INTERVAL 90 DAY
+        LEFT JOIN sale_order_items soi ON so.orderId = soi.sale_order_id
+        LEFT JOIN products ps2 ON ps2.external_product_id = soi.external_product_id
+        LEFT JOIN pt ON pt.external_product_id = ps2.parent_id
+        LEFT JOIN stores st ON st.depot_id_nhanh = so.depotId
+        LEFT JOIN sale_channel sc ON sc.id = so.channel
+        WHERE so.status = 'Success'
+          AND DATE(so.createdDateTime) >= CURRENT_DATE() - INTERVAL 90 DAY
     )
-
-    SELECT 
+    SELECT
         store,
         category,
         subcategory,
         fdcode,
         default_code,
         SUM(CASE
-                WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN  -((price * quantity) - (quantity * discount)) 
-                WHEN channelName ='Kho Lẻ' THEN (price * quantity) - discount 
-        ELSE (price * quantity) - (discount * quantity) END) rvn,
+            WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -((price * quantity) - (quantity * discount))
+            WHEN channelName = 'Kho Lẻ' THEN (price * quantity) - discount
+            ELSE (price * quantity) - (discount * quantity)
+        END) rvn,
         SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END) AS qty,
         ROUND(
-            CASE 
-                WHEN DATEDIFF(CURRENT_DATE(), MIN(launch_date)) <= 90 THEN
-                    SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END) / 
-                    DATEDIFF(CURRENT_DATE(), MIN(launch_date)) * 90 / 3
-                ELSE
-                    SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END) / 3
+            CASE
+                WHEN DATEDIFF(CURRENT_DATE(), MIN(launch_date)) <= 90
+                    THEN SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END)
+                         / DATEDIFF(CURRENT_DATE(), MIN(launch_date)) * 90 / 3
+                ELSE SUM(CASE WHEN relatedBillId IS NOT NULL AND TRIM(relatedBillId) != '' THEN -quantity ELSE quantity END) / 3
             END, 1
         ) AS avg_qty
     FROM main_data
-    WHERE store NOT IN('ECOM', 'ECOM SG')
-    GROUP BY 
-        store,
-        category,
-        subcategory,
-        default_code,
-        fdcode
+    WHERE store NOT IN ('ECOM', 'ECOM SG')
+    GROUP BY store, category, subcategory, default_code, fdcode
 """
 
-# Lấy dữ liệu bán hàng từ database
 with engine.connect() as conn:
-    combined_df = pd.read_sql_query(text(query_sales_90_days), conn)
-print("query sale 90 day finished.")
+    df_sales_kdc = pd.read_sql_query(text(query_sales_90), conn)
+print('Finished query sales 90 day KDC/KDS')
 
-engine_ecom = get_ecom_engine()
+df_sales_kdc_ft = df_sales_kdc[df_sales_kdc['category'].isin(category_setup)].copy()
+df_sales_kdc_ft['channel'] = df_sales_kdc_ft['store'].apply(map_channel)
 
-query_sales_90_days_ecom = """
+# ==========================================
+# 5. DOANH SỐ 90 NGÀY – ECOM
+# ==========================================
+query_ecom = """
     SELECT
-        "ECOM" as store,
+        'ECOM' AS store,
         eoi.product_sku fdcode,
         SUM(eoi.quantity) qty,
-        SUM(eoi.price * eoi.quantity) as rvn
+        SUM(eoi.price * eoi.quantity) AS rvn
     FROM ecommerce_orders eo
     JOIN ecommerce_order_items eoi ON eoi.external_order_id = eo.external_order_id
     JOIN order_source os ON eo.order_source_id = os.id
-    WHERE
-        DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
-        AND eo.status NOT IN ('cancelled', 'returned')
-        AND UPPER(os.name) <> 'BOXME'
-        AND eoi.product_sku <>''
-    GROUP BY store,
-             fdcode
+    WHERE DATE(eo.order_date) >= CURRENT_DATE() - INTERVAL 90 DAY
+      AND eo.status NOT IN ('cancelled', 'returned')
+      AND UPPER(os.name) NOT IN ('BOXME', 'RETAIL')
+      AND eoi.product_sku <> ''
+    GROUP BY fdcode
 """
 
-# Lấy dữ liệu bán hàng từ database
 with engine_ecom.connect() as conn:
-    combined_df_ecom = pd.read_sql_query(text(query_sales_90_days_ecom), conn)
-print("query sale_ecom 90 day finished.")
+    df_sales_ecom_raw = pd.read_sql_query(text(query_ecom), conn)
+print('Finished query sales 90 day ECOM')
 
-combined_df_ecom_ft = combined_df_ecom[combined_df_ecom['fdcode'] != "" ]
+df_sales_ecom_raw = df_sales_ecom_raw[df_sales_ecom_raw['fdcode'] != ''].copy()
+df_sales_ecom_raw['fdcode'] = df_sales_ecom_raw['fdcode'].str.upper()
 
-combined_df_ecom_ft['fdcode'] = combined_df_ecom_ft['fdcode'].str.upper()
-df_products_template['fdcode'] = df_products_template['fdcode'].str.upper()
-
-combined_df_ecom_merge = pd.merge(
-    combined_df_ecom_ft,
+df_sales_ecom = pd.merge(
+    df_sales_ecom_raw,
     df_products_template[['fdcode', 'default_code', 'category', 'subcategory', 'launch_date']],
-    on='fdcode',
-    how='left'
+    on='fdcode', how='left'
+)
+df_sales_ecom = df_sales_ecom[df_sales_ecom['category'].isin(category_setup)].copy()
+df_sales_ecom['channel'] = 'ECOM'
+
+# Tính avg_qty ECOM theo launch_date
+df_sales_ecom['launch_date'] = pd.to_datetime(df_sales_ecom['launch_date'], errors='coerce')
+today_ts = pd.Timestamp.today().normalize()
+grp_keys = ['channel', 'fdcode']
+total_qty  = df_sales_ecom.groupby(grp_keys)['qty'].transform('sum')
+min_launch = df_sales_ecom.groupby(grp_keys)['launch_date'].transform('min')
+days_since = ((today_ts - min_launch).dt.days).clip(lower=1)
+df_sales_ecom['avg_qty'] = np.round(
+    np.where(days_since <= 90, total_qty / days_since * 90 / 3, total_qty / 3), 1
 )
 
-combined_df_ecom_merge_ft = combined_df_ecom_merge[combined_df_ecom_merge['category'].isin(category_setup)]
+# ==========================================
+# 6. TỔNG HỢP DOANH SỐ
+# ==========================================
+cols = ['channel', 'fdcode', 'default_code', 'category', 'subcategory', 'qty', 'rvn', 'avg_qty']
+df_sales_all = pd.concat([df_sales_kdc_ft[cols], df_sales_ecom[cols]], ignore_index=True)
 
-df = combined_df_ecom_merge_ft.copy()
-
-# Đảm bảo launch_date là datetime (an toàn nếu cột đang là string)
-df['launch_date'] = pd.to_datetime(df['launch_date'], errors='coerce')
-
-# Chọn keys nhóm giống logic gộp đầu ra (giữ theo channel + fdcode; 
-# nếu bạn muốn chi tiết hơn có thể thêm 'default_code','category','subcategory')
-keys = ['store', 'fdcode']
-
-# Tổng qty theo nhóm và launch_date nhỏ nhất theo nhóm
-total_qty = df.groupby(keys)['qty'].transform('sum')
-min_launch = df.groupby(keys)['launch_date'].transform('min')
-
-# Số ngày kể từ launch đến hôm nay (tránh chia 0)
-today = pd.Timestamp.today().normalize()
-days_since_launch = (today - min_launch).dt.days.clip(lower=1)
-
-# avg_qty theo công thức:
-# nếu days_since_launch <= 90:
-#   avg_qty = total_qty / days_since_launch * 90 / 3
-# else:
-#   avg_qty = total_qty / 3
-avg_qty = np.where(
-    days_since_launch <= 90,
-    total_qty / days_since_launch * 90 / 3,
-    total_qty / 3
+# Theo fdcode (cho phân bổ size và tính tồn)
+df_sales_fdcode = (
+    df_sales_all
+    .groupby(['channel', 'fdcode', 'default_code', 'category', 'subcategory'], as_index=False)
+    .agg({'qty': 'sum', 'rvn': 'sum', 'avg_qty': 'sum'})
 )
 
-df['avg_qty'] = np.round(avg_qty, 1)
-
-# Gán ngược lại vào dataframe chính (hoặc dùng df ở dưới cho tiếp tục xử lý)
-combined_df_ecom_merge_ft = df
-
-# Target
-
-worksheet_target = sht.worksheet(SHEET10)
-data_target = worksheet_target.get_all_values()
-df_target = pd.DataFrame(data_target[1:], columns=data_target[0])
-df_target['month'] = df_target['month'].astype(int)
-
-# =========================
-# 0) THAM SỐ THÁNG ĐẶT HÀNG
-# =========================
-ORDER_MONTH = 8     # ví dụ: tháng 11
-ORDER_YEAR  = 2026     # ví dụ: năm 2025
-
-# % TARGET dành cho TOP30 mỗi kênh (bạn điều chỉnh nếu khác nhau theo kênh)
-ALLOC_PERCENT = {
-    'ECOM': 0.8,
-    'KDC' : 0.6,
-    'KDS' : 0.8
-}
-
-# =========================
-# 1) TỔNG HỢP BÁN & TỒN CŨ
-# =========================
-combined_filter = combined_df[combined_df['category'].isin(category_setup)].copy()
-combined_filter['channel'] = combined_filter['store'].apply(channel)
-combined_df_ecom_merge_ft['channel'] = combined_df_ecom_merge_ft['store'].apply(channel)
-
-combined_df_ecom_merge_fn = combined_df_ecom_merge_ft[['channel', 'fdcode', 'qty', 'rvn', 'default_code', 'category', 'subcategory', 'avg_qty']]
-df_sale_total = pd.concat([combined_filter, combined_df_ecom_merge_ft], ignore_index=True)
-combined_gr = (
-    df_sale_total.groupby(['channel', 'category', 'subcategory', 'default_code'], as_index=False)
-    .agg({'rvn': 'sum', 'qty': 'sum', 'avg_qty': 'sum'})
+# Theo default_code (cho phân bổ từ subcategory xuống mã hàng)
+df_sales_code = (
+    df_sales_fdcode
+    .groupby(['channel', 'subcategory', 'default_code'], as_index=False)
+    .agg({'qty': 'sum', 'rvn': 'sum'})
 )
 
-combined_gr = pd.merge(
-    combined_gr,
-    df_stock_gr[['channel', 'default_code', 'available']],
-    on=['channel', 'default_code'],
-    how='left'
+# Giá bán trung bình theo channel + default_code (dùng khi target là revenue)
+df_avg_price = (
+    df_sales_fdcode
+    .groupby(['channel', 'default_code'])
+    .agg(total_rvn=('rvn', 'sum'), total_qty=('qty', 'sum'))
+    .reset_index()
 )
-
-combined_gr = pd.merge(
-    combined_gr,
-    df_order_gr[['channel', 'default_code', 'qty_ord', 'qty_delivered_by_manu', 'order_pen']],
-    on=['channel', 'default_code'],
-    how='left'
-)
-
-combined_gr.fillna(0, inplace=True)
-
-# Lấy launch_date sớm nhất theo mã
-df_template_fix = df_products_template.groupby('default_code', as_index=False).agg({'launch_date': 'min'})
-combined_gr = pd.merge(combined_gr, df_template_fix[['default_code', 'launch_date']], on='default_code', how='left')
-
-combined_gr['days_since_launch'] = (datetime.now() - combined_gr['launch_date']).dt.days
-combined_gr['qty_cdeliver'] = np.round(combined_gr['order_pen'], 0)
-combined_gr['stock_af_production'] = np.round(combined_gr['qty_cdeliver'] + combined_gr['available'], 0)
-
-df_top20 = combined_gr[['channel', 'default_code',
-                        'qty', 'rvn', 'launch_date',
-                        'days_since_launch', 'avg_qty',
-                        'available', 'category', 'qty_ord',
-                        'order_pen', 'qty_cdeliver', 'stock_af_production']].copy()
-
-worksheet_top20 = sht.worksheet(SHEET4)
-worksheet_top20.batch_clear(['A1:M'])
-gd.set_with_dataframe(worksheet_top20, df_top20)
-print('Finished update data top20')
-
-worksheet_product_template = sht.worksheet(SHEET8)
-worksheet_product_template.clear()
-gd.set_with_dataframe(worksheet_product_template, df_products_template)
-print('Finished update data product_template')
-
-df_stock_gr2 = (
-    df_stock.groupby(['channel', 'fdcode', 'default_code', 'subcategory', 'category'], as_index=False)
-    .agg({'available': 'sum'})
-)
-
-worksheet_stock = sht.worksheet(SHEET7)
-worksheet_stock.clear()
-gd.set_with_dataframe(worksheet_stock, df_stock_gr2)
-print('Finished update data stock')
-
-# =========================
-# 2) ĐỌC ĐƠN ĐẶT & TARGET
-# =========================
-worksheet_rp = sht.worksheet(SHEET2)
-data_order = worksheet_rp.get('E12:S200')
-df_order = pd.DataFrame(data_order[1:], columns=data_order[0])
-
-# Chuẩn hoá df_target
-df_target['kpi_revenue'] = pd.to_numeric(
-    df_target['kpi_revenue'].astype(str).str.replace(',', ''), errors='coerce'
-)
-
-df_target_gr = (
-    df_target.groupby(['channel', 'month'], as_index=False)['kpi_revenue']
-    .sum()
-    .rename(columns={'kpi_revenue': 'target_revenue'})
-)
-
-# Lọc target của tháng đặt hàng
-df_target_month = df_target_gr[df_target_gr['month'].eq(ORDER_MONTH)][['channel', 'target_revenue']].copy()
-df_target_month['alloc_pct'] = df_target_month['channel'].map(ALLOC_PERCENT).fillna(0.70)
-df_target_month['alloc_budget_top30'] = df_target_month['target_revenue'] * df_target_month['alloc_pct']
-
-# =========================
-# 3) DỮ LIỆU MẪU ĐƯỢC ĐẶT
-# =========================
-# Tỉ trọng đặt hàng mẫu mới: các cột: channel, density
-worksheet_density = sht.worksheet(SHEET2)
-data_density = worksheet_density.get('A14:B17')
-df_density = pd.DataFrame(data_density[1:], columns=data_density[0])
-
-# DS mẫu mới cần đặt: các cột: default_code, size_default, qty_need
-worksheet_new_order = sht.worksheet(SHEET5)
-data_new_order = worksheet_new_order.get_all_values()
-df_new_order = pd.DataFrame(data_new_order[1:], columns=data_new_order[0])
-
-# DS size tỉ trọng: các cột: default_code, size, density_size
-worksheet_raw_size = sht.worksheet(SHEET6)
-data_raw_size = worksheet_raw_size.get_all_values()
-df_raw_size = pd.DataFrame(data_raw_size[1:], columns=data_raw_size[0])
-
-# Lọc đơn hàng hợp lệ & chuẩn hoá doanh thu
-df_order_filter = df_order[df_order['MẪU ĐƯỢC ĐẶT'].isin(['Được phép đặt', 'Mẫu mới'])].copy()
-df_order_filter['Tổng Doanh Thu'] = pd.to_numeric(
-    df_order_filter['Tổng Doanh Thu'].astype(str).str.replace(',', ''), errors='coerce'
-)
-df_order_filter_renamed = df_order_filter.rename(columns={'MSP': 'default_code', 'Kênh bán': 'channel'})
-
-# =========================
-# 4) KẾ HOẠCH TỒN & HST
-# =========================
-# Merge đúng mã + kênh
-df_stock_ft = pd.merge(
-    df_stock_gr2,
-    df_order_filter_renamed[['default_code', 'channel']].drop_duplicates(),
-    on=['default_code', 'channel'],
-    how='inner'
-)
-
-# avg_qty theo kênh + fdcode
-combined_gr2 = (
-    df_sale_total.groupby(['channel', 'fdcode'], as_index=False)
-    .agg({'avg_qty': 'sum'})
-)
-df_order_plan = pd.merge(
-    df_stock_ft, combined_gr2[['channel', 'fdcode', 'avg_qty']],
-    on=['channel', 'fdcode'], how='left'
-)
-
-# Hàng đang về
-df_order_tracking_gr = (
-    df_order_tracking.groupby(['channel', 'fdcode'], as_index=False)
-    .agg({'order_pen': 'sum'})
-)
-df_order_plan = pd.merge(
-    df_order_plan, df_order_tracking_gr[['channel', 'fdcode', 'order_pen']],
-    on=['channel', 'fdcode'], how='left'
-)
-df_order_plan['order_pen'] = df_order_plan['order_pen'].fillna(0)
-
-# TOP10 THEO DOANH THU (để chỉnh hệ số HST kênh)
-top10_revenue = (
-    df_order_filter_renamed.groupby(['channel', 'default_code'], as_index=False)['Tổng Doanh Thu']
-    .sum()
-)
-top10_revenue['rank_in_channel'] = top10_revenue.groupby('channel')['Tổng Doanh Thu'] \
-    .rank(method='first', ascending=False)
-top10_revenue['is_top10'] = top10_revenue['rank_in_channel'] <= 10
-
-df_order_plan = pd.merge(
-    df_order_plan, top10_revenue[['channel', 'default_code', 'is_top10']],
-    on=['channel', 'default_code'], how='left'
-)
-df_order_plan['is_top10'] = df_order_plan['is_top10'].fillna(False)
-
-# Hệ số tồn theo kênh + ngoài TOP10 giảm 0.5
-channel_coeff = {'ECOM': 2, 'KDC': 3, 'KDS': 2}
-df_order_plan['channel_coeff'] = df_order_plan['channel'].map(channel_coeff).fillna(2.5)
-
-# HST hiện tại
-df_order_plan['avg_qty'] = df_order_plan['avg_qty'].fillna(0)
-df_order_plan['available'] = df_order_plan['available'].fillna(0)
-df_order_plan['hst'] = np.where(
-    df_order_plan['avg_qty'] > 0,
-    np.round((df_order_plan['available'] + df_order_plan['order_pen']) / df_order_plan['avg_qty'], 1),
+df_avg_price['avg_price'] = np.where(
+    df_avg_price['total_qty'] > 0,
+    df_avg_price['total_rvn'] / df_avg_price['total_qty'],
     np.nan
 )
 
-# =========================================
-# 5) PHÂN BỔ TARGET CHO TOP30 THEO DOANH THU
-#    + QUY ĐỔI SANG SỐ LƯỢNG (AVG.Price)
-# =========================================
-# =============================
-# 1) Tổng doanh thu theo mã/kênh + xếp hạng
-# =============================
-rev_by_code = (
-    df_order_filter_renamed.groupby(['channel', 'default_code'], as_index=False)['Tổng Doanh Thu']
+# ==========================================
+# 7. CATALOGUE – chỉ đặt hàng mã có trong catalogue
+# ==========================================
+catalogue_sht  = gs.open_by_key('1ULMcAbIDIh1VQZf66xotuvmTbrSmpXL3v5CqBe7s8ME')
+ws_catalogue   = catalogue_sht.worksheet('CATALOGUE')
+data_catalogue = ws_catalogue.get_all_values()
+df_catalogue   = pd.DataFrame(data_catalogue[6:], columns=data_catalogue[5])
+catalogue_codes = set(df_catalogue.iloc[:, 2].str.strip().str.upper().dropna().unique())
+print(f'Loaded catalogue: {len(catalogue_codes)} mã SP CHA')
+
+df_sales_fdcode = df_sales_fdcode[df_sales_fdcode['default_code'].str.upper().isin(catalogue_codes)].copy()
+df_sales_code   = df_sales_code[df_sales_code['default_code'].str.upper().isin(catalogue_codes)].copy()
+df_avg_price    = df_avg_price[df_avg_price['default_code'].str.upper().isin(catalogue_codes)].copy()
+print(f'Sau filter catalogue: {df_sales_fdcode["default_code"].nunique()} mã còn lại trong sales')
+
+# ==========================================
+# 8. ĐỌC TARGET TỪ UNPIVOT_TARGET
+# ==========================================
+target_sht      = gs.open_by_key(TARGET_SHEET_KEY)
+worksheet_target = target_sht.worksheet(TARGET_SHEET_NAME)
+data_target     = worksheet_target.get_all_values()
+df_target       = pd.DataFrame(data_target[1:], columns=data_target[0])
+
+df_target['month']   = pd.to_numeric(df_target['month'], errors='coerce')
+df_target['year']    = pd.to_numeric(
+    df_target['year'].astype(str).str.replace(',', '', regex=False), errors='coerce'
+)
+df_target['numbers'] = pd.to_numeric(
+    df_target['numbers'].astype(str).str.replace(',', '', regex=False), errors='coerce'
+)
+
+# DEBUG: xem giá trị thực tế trong sheet
+print('[DEBUG] metric values in sheet:', df_target['metric'].str.strip().unique().tolist())
+print('[DEBUG] year/month combos:', df_target[['year','month']].drop_duplicates().sort_values(['year','month']).to_string(index=False))
+
+df_target_month = df_target[
+    (df_target['month'] == ORDER_MONTH) &
+    (df_target['year']  == ORDER_YEAR)  &
+    (df_target['metric'].str.strip() == METRIC_FILTER.strip())
+].copy()
+
+# Target theo channel + subcategory
+df_target_subcat = (
+    df_target_month.groupby(['channel', 'subcategory'], as_index=False)['numbers']
     .sum()
-    .rename(columns={'Tổng Doanh Thu': 'rev'})
+    .rename(columns={'numbers': 'target_value'})
+)
+print(f'[DEBUG] target rows matched: {len(df_target_subcat)} (month={ORDER_MONTH}, year={ORDER_YEAR}, metric="{METRIC_FILTER}")')
+if len(df_target_subcat) > 0:
+    print(df_target_subcat.to_string(index=False))
+
+# ==========================================
+# 8. PHÂN BỔ TARGET XUỐNG TỪNG MẪU (default_code)
+#    Tỉ trọng theo SỐ LƯỢNG bán trong subcategory
+# ==========================================
+df_subcat_total = (
+    df_sales_code.groupby(['channel', 'subcategory'], as_index=False)['qty']
+    .sum()
+    .rename(columns={'qty': 'subcat_total_qty'})
 )
 
-# Rank theo doanh thu trong từng kênh
-rev_by_code['rank_in_channel'] = rev_by_code.groupby('channel')['rev'] \
+df_code_plan = (
+    df_sales_code
+    .merge(df_subcat_total, on=['channel', 'subcategory'], how='left')
+    .merge(df_target_subcat, on=['channel', 'subcategory'], how='left')
+    .merge(df_avg_price[['channel', 'default_code', 'avg_price']], on=['channel', 'default_code'], how='left')
+)
+df_code_plan['target_value'] = df_code_plan['target_value'].fillna(0)
+
+# Tỉ trọng số lượng bán của mã trong subcategory
+df_code_plan['product_share'] = np.where(
+    df_code_plan['subcat_total_qty'] > 0,
+    df_code_plan['qty'] / df_code_plan['subcat_total_qty'],
+    0
+)
+df_code_plan['qty_rank'] = (
+    df_code_plan.groupby(['channel', 'subcategory'])['qty']
     .rank(method='first', ascending=False)
-rev_by_code['is_top30'] = rev_by_code['rank_in_channel'] <= 30
-
-# =============================
-# 2) Phân bổ ngân sách TOP30 theo tỷ trọng doanh thu
-# =============================
-top30_sum = (
-    rev_by_code[rev_by_code['is_top30']]
-    .groupby('channel', as_index=False)['rev'].sum()
-    .rename(columns={'rev': 'top30_rev_sum'})
+    .astype(int)
 )
+df_code_plan['product_target_value'] = df_code_plan['target_value'] * df_code_plan['product_share']
 
-rev_top30 = (
-    rev_by_code.loc[rev_by_code['is_top30'], ['channel', 'default_code', 'rev']]
-    .merge(top30_sum, on='channel', how='left')
-)
-rev_top30['rev_share_in_top30'] = np.where(
-    rev_top30['top30_rev_sum'] > 0,
-    rev_top30['rev'] / rev_top30['top30_rev_sum'],
-    0
-)
-
-# Gắn ngân sách TOP30 từ TARGET tháng
-rev_top30 = rev_top30.merge(
-    df_target_month[['channel', 'alloc_budget_top30']],
-    on='channel', how='left'
-)
-rev_top30['allocated_revenue'] = rev_top30['rev_share_in_top30'] * rev_top30['alloc_budget_top30']
-
-# =============================
-# 3) Giá bán TB (AVG.Price) -> số lượng dự kiến từ ngân sách
-# =============================
-avg_price = (
-    df_order[df_order['MẪU ĐƯỢC ĐẶT'].isin(['Được phép đặt', 'Mẫu mới'])]
-    .rename(columns={'MSP': 'default_code', 'Kênh bán': 'channel'})
-    [['channel', 'default_code', 'AVG.Price']]
-    .copy()
-)
-
-avg_price['AVG.Price'] = (
-    avg_price['AVG.Price']
-    .astype(str)                # ép sang chuỗi để xử lý
-    .str.replace(',', '', regex=False)  # bỏ dấu phẩy
-)
-
-avg_price['AVG.Price'] = pd.to_numeric(avg_price['AVG.Price'], errors='coerce')
-
-avg_price = avg_price.groupby(['channel', 'default_code'], as_index=False)['AVG.Price'].mean()
-avg_price = avg_price.rename(columns={'AVG.Price': 'avg_price'})
-
-# Merge giá vào TOP30
-rev_top30 = rev_top30.merge(avg_price, on=['channel', 'default_code'], how='left')
-rev_top30['avg_price'] = rev_top30['avg_price'].replace([0, np.inf, -np.inf], np.nan)
-if rev_top30['avg_price'].isna().any():
-    rev_top30['avg_price'] = rev_top30['avg_price'].fillna(
-        rev_top30.groupby('channel')['avg_price'].transform('median')
+# Đổi doanh thu → số lượng nếu metric là revenue; nếu là SL thì dùng trực tiếp
+if METRIC_FILTER == 'Dthu dự tính':
+    df_code_plan['avg_price'] = df_code_plan.groupby('channel')['avg_price'].transform(
+        lambda x: x.fillna(x.median())
     )
-
-# Số lượng dự kiến từ ngân sách (cấp channel, default_code)
-rev_top30['forecast_qty_from_alloc'] = np.where(
-    rev_top30['avg_price'] > 0,
-    rev_top30['allocated_revenue'] / rev_top30['avg_price'],
-    0
-)
-
-# Gắn về kế hoạch (mã ngoài TOP30 = 0)
-df_order_plan = df_order_plan.merge(
-    rev_top30[['channel', 'default_code', 'forecast_qty_from_alloc']],
-    on=['channel', 'default_code'], how='left'
-)
-df_order_plan['forecast_qty_from_alloc'] = df_order_plan['forecast_qty_from_alloc'].fillna(0)
-
-# =============================
-# 4) Dự kiến bán đến TRƯỚC ngày 1 của tháng đặt (để làm tỉ trọng)
-# =============================
-
-today = date.today()
-start_of_target_month = date(ORDER_YEAR, ORDER_MONTH, 1)
-days_remaining_pre_start = max((start_of_target_month - today).days, 0)
-
-# Bán TB/ngày = avg_qty/30
-df_order_plan['daily_avg_qty'] = df_order_plan['avg_qty'].fillna(0) / 30.0
-df_order_plan['forecast_qty_until_start'] = df_order_plan['daily_avg_qty'] * days_remaining_pre_start
-
-# Phân rã forecast_qty_from_alloc xuống từng dòng theo tỉ trọng forecast_qty_until_start
-tot_forecast = (
-    df_order_plan.groupby(['channel','default_code'], as_index=False)['forecast_qty_until_start'].sum()
-    .rename(columns={'forecast_qty_until_start':'total_forecast_until_start'})
-)
-alloc_per_code = (
-    df_order_plan.groupby(['channel','default_code'], as_index=False)['forecast_qty_from_alloc'].first()
-    .rename(columns={'forecast_qty_from_alloc':'alloc_qty_per_code'})
-)
-df_order_plan = df_order_plan.merge(tot_forecast, on=['channel','default_code'], how='left') \
-                             .merge(alloc_per_code, on=['channel','default_code'], how='left')
-df_order_plan['forecast_qty_from_alloc'] = np.where(
-    df_order_plan['total_forecast_until_start'] > 0,
-    df_order_plan['alloc_qty_per_code'] * (df_order_plan['forecast_qty_until_start'] /
-                                           df_order_plan['total_forecast_until_start']),
-    0
-)
-df_order_plan.drop(columns=['total_forecast_until_start','alloc_qty_per_code'], inplace=True)
-
-# =============================
-# 5) Hệ số tồn theo bậc TOP10/TOP20/TOP30 và theo kênh
-# =============================
-# Dùng rank đã tính sẵn trong rev_by_code để gắn vào df_order_plan
-df_order_plan = df_order_plan.merge(
-    rev_by_code[['channel','default_code','rank_in_channel']],
-    on=['channel','default_code'], how='left'
-)
-
-df_order_plan['channel_coeff'] = df_order_plan['channel'].map(channel_coeff).fillna(2.5)
-
-# Áp dụng bậc:
-# - ECOM/KDC: Top1-10: base; 11-20: base-0.5; >=21 (kể cả ngoài Top30/NaN): base-1.0
-# - KDS: ngoài Top10: base-0.5
-df_order_plan['coeff_adj'] = df_order_plan['channel_coeff']
-is_ec_kdc = df_order_plan['channel'].isin(['ECOM','KDC'])
-
-df_order_plan.loc[
-    is_ec_kdc & df_order_plan['rank_in_channel'].between(11,20, inclusive='both'),
-    'coeff_adj'
-] = df_order_plan['channel_coeff'] - 0.5
-
-df_order_plan.loc[
-    is_ec_kdc & ((df_order_plan['rank_in_channel'] >= 21) | (df_order_plan['rank_in_channel'].isna())),
-    'coeff_adj'
-] = df_order_plan['channel_coeff'] - 1.0
-
-is_kds = df_order_plan['channel'].eq('KDS')
-df_order_plan['is_top10'] = df_order_plan['rank_in_channel'] <= 10
-df_order_plan.loc[is_kds & (~df_order_plan['is_top10'].fillna(False)), 'coeff_adj'] = \
-    df_order_plan['channel_coeff'] - 0.5
-
-# Tồn kho cần có để cover
-df_order_plan['required_stock_for_cover'] = df_order_plan['coeff_adj'] * df_order_plan['forecast_qty_from_alloc'].fillna(0)
-
-# =============================
-# 6) Thiếu/dư trước bù trừ và số cần đặt ban đầu
-# =============================
-df_order_plan['available_future'] = df_order_plan['available'].fillna(0) + df_order_plan['order_pen'].fillna(0)
-
-# shortage_raw > 0: DƯ ; shortage_raw < 0: THIẾU
-df_order_plan['shortage_raw'] = (
-    df_order_plan['available_future']
-    - df_order_plan['required_stock_for_cover'].fillna(0)
-)
-
-# Số cần đặt ban đầu (thiếu dương)
-df_order_plan['qty_need_pre'] = (-df_order_plan['shortage_raw']).clip(lower=0)
-
-# Rule tối thiểu 20 (áp dụng TRƯỚC khi bù trừ; bù trừ có thể kéo về 0)
-rule_cond = (df_order_plan['qty_need_pre'] == 0) & (df_order_plan['available'] <= 10) & (df_order_plan['order_pen'] <= 10)
-df_order_plan.loc[rule_cond, 'qty_need_pre'] = 30
-
-# =============================
-# 7) Bù trừ giữa các kênh cho cùng default_code (không lập bảng chuyển)
-# =============================
-# Tổng thiếu (trước bù) và tổng dư theo mã
-agg_code = df_order_plan.groupby('default_code').agg(
-    total_need_pre=('qty_need_pre','sum'),
-    total_surplus=('shortage_raw', lambda s: s[s > 0].sum())  # chỉ cộng phần dương (dư)
-).reset_index()
-
-# Net cần đặt theo mã sau bù trừ
-agg_code['net_to_order_code'] = (agg_code['total_need_pre'] - agg_code['total_surplus']).clip(lower=0)
-
-# Lượng được bù = total_need_pre - net_to_order_code (không vượt quá total_need_pre)
-agg_code['reduction_code'] = (agg_code['total_need_pre'] - agg_code['net_to_order_code']).clip(lower=0)
-
-# Merge về dòng để phân bổ giảm theo tỉ trọng nhu cầu ban đầu
-df_order_plan = df_order_plan.merge(
-    agg_code[['default_code','total_need_pre','reduction_code']],
-    on='default_code', how='left'
-)
-
-df_order_plan['need_share_in_code'] = np.where(
-    df_order_plan['total_need_pre'] > 0,
-    df_order_plan['qty_need_pre'] / df_order_plan['total_need_pre'],
-    0
-)
-df_order_plan['reduction_applied'] = df_order_plan['need_share_in_code'] * df_order_plan['reduction_code']
-
-# Số cần đặt sau bù trừ
-df_order_plan['qty_need_adj'] = (df_order_plan['qty_need_pre'] - df_order_plan['reduction_applied']).clip(lower=0)
-df_order_plan['qty_need_adj'] = df_order_plan['qty_need_adj'].round(-1)
-
-# =============================
-# 8) Báo cáo riêng (before/after)
-# =============================
-df_order_report = df_order_plan.groupby(['default_code','channel'], as_index=False).agg(
-    rank_in_channel=('rank_in_channel','min'),
-    coeff_adj=('coeff_adj','min'),
-    available_future=('available_future','sum'),
-    forecast_until_start=('forecast_qty_until_start','sum'),
-    required_cover=('required_stock_for_cover','sum'),
-    shortage_raw=('shortage_raw','sum'),
-    qty_need_pre=('qty_need_pre','sum'),
-    reduction_applied=('reduction_applied','sum'),
-    qty_need_adj=('qty_need_adj','sum')
-).sort_values(['default_code','channel'])
-
-# =============================
-# 9) Danh sách đặt hàng cuối cùng & lọc mã < 500
-# =============================
-df_ord_plan_ft = df_order_plan[df_order_plan['qty_need_adj'] > 0].copy()
-
-sum_per_code = df_ord_plan_ft.groupby('default_code', as_index=False)['qty_need_adj'].sum()
-valid_codes = sum_per_code.loc[sum_per_code['qty_need_adj'] >= 200, 'default_code']
-df_ord_plan_ft = df_ord_plan_ft[df_ord_plan_ft['default_code'].isin(valid_codes)]
-
-# Ghép size để xuất
-df_ord_plan_ft = pd.merge(
-    df_ord_plan_ft,
-    df_products_template[['fdcode', 'size']],
-    on='fdcode',
-    how='left'
-)
-
-# ===== ĐẶT HÀNG MẪU MỚI =====
-
-# 1. Tạo key để merge
-df_new_order['key'] = 1
-df_density['key'] = 1
-
-# 2. Merge các bảng
-df_tmp = (
-    df_new_order
-    .merge(df_density, on='key', how='inner')
-    .drop(columns='key')
-    .merge(df_raw_size, on='size_default', how='inner')
-)
-
-# 3. Ép kiểu số cho tất cả các cột liên quan
-cols_to_numeric = ['qty_need_adj', 'density', 'density_size']
-for col in cols_to_numeric:
-    df_tmp[col] = pd.to_numeric(df_tmp[col], errors='coerce').fillna(0)
-
-# Đồng thời ép kiểu cho df_new_order để tránh lỗi phép trừ sau này
-df_new_order['qty_need_adj'] = pd.to_numeric(df_new_order['qty_need_adj'], errors='coerce').fillna(0)
-
-# 4. Tính trọng số
-df_tmp['weight'] = df_tmp['density'] * df_tmp['density_size']
-
-# 5. Tổng trọng số mỗi mã (default_code)
-df_tmp['total_weight_per_code'] = df_tmp.groupby('default_code')['weight'].transform('sum')
-
-# 6. Phân bổ lại qty_need theo trọng số
-df_tmp['qty_need_adj'] = (df_tmp['qty_need_adj'] * df_tmp['weight'] / df_tmp['total_weight_per_code']).round(-1)
-
-# 7. Nếu qty_need = 0 thì thay bằng 10 để không mất dòng
-#df_tmp.loc[df_tmp['qty_need'] == 0, 'qty_need'] = 10
-
-# 8. Bù phần chênh lệch để đảm bảo tổng số lượng đúng
-expected_total = df_new_order['qty_need_adj'].sum()   # Tổng ban đầu
-actual_total = df_tmp['qty_need_adj'].sum()           # Tổng sau phân bổ
-
-# Đảm bảo kiểu float -> int an toàn
-diff = int(float(expected_total) - float(actual_total))
-
-if diff != 0:
-    idx_max = df_tmp[df_tmp['qty_need_adj'] > 0].sort_values(by='qty_need_adj', ascending=False).index[0]
-    df_tmp.loc[idx_max, 'qty_need_adj'] += diff
-
-# ────────────────────────────────────────────────
-# 2) TẠO DATAFRAME ĐƠN ĐẶT HÀNG MỚI
-# ────────────────────────────────────────────────
-
-# Giữ lại các cột chính
-new_order_cols = ['channel', 'default_code', 'size', 'qty_need_adj']
-df_new_orders = df_tmp[new_order_cols].copy()
-
-# Tạo mã fdcode (size + model), thêm hậu tố 'W' nếu có
-if not df_new_orders.empty and 'size' in df_new_orders.columns and 'default_code' in df_new_orders.columns:
-    df_new_orders['fdcode'] = df_new_orders.apply(
-        lambda x: (
-            x['size'].replace("W", "") + x['default_code'] + ('W' if 'W' in x['size'] else '')
-        ),
-        axis=1
+    df_code_plan['product_target_qty'] = np.where(
+        df_code_plan['avg_price'] > 0,
+        df_code_plan['product_target_value'] / df_code_plan['avg_price'],
+        0
     )
 else:
-    print("⚠️ df_new_orders rỗng hoặc thiếu cột cần thiết: size, default_code")
-    df_new_orders['fdcode'] = ""  # hoặc np.nan tuỳ mục đích
+    # 'SL kì vọng' – đơn vị đã là số lượng
+    df_code_plan['product_target_qty'] = df_code_plan['product_target_value']
 
-# Bổ sung các cột còn thiếu để khớp với df_ord_plan_ft
-for col in df_ord_plan_ft.columns:
-    if col not in df_new_orders.columns:
-        df_new_orders[col] = 0  # hoặc np.nan tùy logic
+# ==========================================
+# 9. PHÂN BỔ XUỐNG TỪNG SIZE (fdcode)
+#    Tỉ trọng theo SỐ LƯỢNG bán của size trong mã hàng
+# ==========================================
+df_size_total = (
+    df_sales_fdcode.groupby(['channel', 'default_code'], as_index=False)['qty']
+    .sum()
+    .rename(columns={'qty': 'code_total_qty'})
+)
 
-# Chuẩn bị cấu trúc cột giống nhau
-df_new_orders = df_new_orders[df_ord_plan_ft.columns]
-df_final_combined = pd.concat([df_ord_plan_ft, df_new_orders], ignore_index=True)
+df_fdcode_plan = (
+    df_sales_fdcode[['channel', 'fdcode', 'default_code', 'subcategory', 'category', 'qty', 'avg_qty']]
+    .merge(df_size_total, on=['channel', 'default_code'], how='left')
+    .merge(df_code_plan[['channel', 'subcategory', 'default_code', 'product_target_qty', 'qty_rank']], on=['channel', 'subcategory', 'default_code'], how='left')
+)
 
-df_final_combined['qty_need_adj'].fillna(0, inplace=True)
-combined_ft = df_final_combined[df_final_combined['qty_need_adj'] > 0]
-combined_fxt = combined_ft[['channel', 'fdcode', 'size', 'default_code', 'subcategory', 'category', 'available', 'avg_qty', 'order_pen', 'hst', 'qty_need_adj']]
+df_fdcode_plan['size_share'] = np.where(
+    df_fdcode_plan['code_total_qty'] > 0,
+    df_fdcode_plan['qty'] / df_fdcode_plan['code_total_qty'],
+    0
+)
+df_fdcode_plan['fdcode_target_qty'] = df_fdcode_plan['product_target_qty'].fillna(0) * df_fdcode_plan['size_share']
 
-print("Starting to process LIST_ORDER sheet...")
+print(f'[DEBUG] fdcode_plan rows: {len(df_fdcode_plan)}')
+print(f'[DEBUG] fdcode_target_qty > 0: {(df_fdcode_plan["fdcode_target_qty"] > 0).sum()} rows, total={df_fdcode_plan["fdcode_target_qty"].sum():.0f}')
+
+# ==========================================
+# 10. TÍNH SỐ LƯỢNG CẦN ĐẶT
+# ==========================================
+today_date           = date.today()
+start_of_order_month = date(ORDER_YEAR, ORDER_MONTH, 1)
+days_until_start     = max((start_of_order_month - today_date).days, 0)
+
+# ── Dự báo bán từ hôm nay đến đầu kỳ theo target subcategory ──────────────
+# Tập hợp các tháng cần lấy target (tháng hiện tại → ORDER_MONTH - 1)
+_fc_months: set = set()
+_m, _y = today_date.month, today_date.year
+while (_y, _m) < (ORDER_YEAR, ORDER_MONTH):
+    _fc_months.add((_y, _m))
+    _m += 1
+    if _m > 12:
+        _m = 1
+        _y += 1
+
+_days_in_cur  = calendar.monthrange(today_date.year, today_date.month)[1]
+_rem_days_cur = _days_in_cur - today_date.day + 1   # số ngày còn lại trong tháng hiện tại
+
+df_target_fc = df_target[
+    df_target[['year', 'month']].apply(
+        lambda r: (int(r['year']), int(r['month'])) in _fc_months, axis=1
+    ) &
+    (df_target['metric'].str.strip() == 'SL kì vọng')
+].copy()
+
+# Prorate tháng hiện tại (chỉ tính số ngày còn lại / tổng ngày trong tháng)
+df_target_fc['prorate'] = df_target_fc.apply(
+    lambda r: _rem_days_cur / _days_in_cur
+              if (int(r['year']) == today_date.year and int(r['month']) == today_date.month)
+              else 1.0,
+    axis=1
+)
+df_target_fc['fc_numbers'] = df_target_fc['numbers'] * df_target_fc['prorate']
+
+df_forecast_subcat = (
+    df_target_fc.groupby(['channel', 'subcategory'], as_index=False)['fc_numbers']
+    .sum()
+    .rename(columns={'fc_numbers': 'forecast_subcat'})
+)
+print(f'[DEBUG] forecast months: {sorted(_fc_months)}, forecast_subcat rows: {len(df_forecast_subcat)}')
+print('[DEBUG] forecast_subcat ECOM SUKE:')
+print(df_forecast_subcat[
+    (df_forecast_subcat['channel'] == 'ECOM') & (df_forecast_subcat['subcategory'].str.upper() == 'SUKE')
+].to_string(index=False))
+print('[DEBUG] avg_qty-based forecast for ECOM SUKE (old method):',
+      round(df_sales_fdcode[(df_sales_fdcode['channel']=='ECOM') &
+                             (df_sales_fdcode['subcategory'].str.upper()=='SUKE')]['avg_qty'].sum()
+            / 30.0 * days_until_start, 1))
+
+# Phân bổ forecast_subcat → default_code theo tỉ trọng DOANH THU trong subcategory
+_rvn_subcat_total = (
+    df_sales_code.groupby(['channel', 'subcategory'], as_index=False)['rvn']
+    .sum()
+    .rename(columns={'rvn': 'subcat_total_rvn'})
+)
+_df_code_fc = (
+    df_sales_code[['channel', 'subcategory', 'default_code', 'rvn']]
+    .merge(_rvn_subcat_total, on=['channel', 'subcategory'], how='left')
+    .merge(df_forecast_subcat, on=['channel', 'subcategory'], how='left')
+)
+_df_code_fc['rvn_share'] = np.where(
+    _df_code_fc['subcat_total_rvn'] > 0,
+    _df_code_fc['rvn'] / _df_code_fc['subcat_total_rvn'],
+    0
+)
+_df_code_fc['forecast_code_qty'] = _df_code_fc['forecast_subcat'].fillna(0) * _df_code_fc['rvn_share']
+
+# Gắn tồn kho và đơn hàng đang về
+df_fdcode_plan = (
+    df_fdcode_plan
+    .merge(df_stock_fdcode[['channel', 'fdcode', 'available']], on=['channel', 'fdcode'], how='left')
+    .merge(df_order_pen[['channel', 'fdcode', 'order_pen']],    on=['channel', 'fdcode'], how='left')
+)
+df_fdcode_plan['available'] = df_fdcode_plan['available'].fillna(0)
+df_fdcode_plan['order_pen'] = df_fdcode_plan['order_pen'].fillna(0)
+
+# Dự báo bán từ hôm nay đến đầu kỳ: phân bổ forecast_code_qty xuống fdcode theo size_share
+df_fdcode_plan = df_fdcode_plan.merge(
+    _df_code_fc[['channel', 'subcategory', 'default_code', 'forecast_code_qty']],
+    on=['channel', 'subcategory', 'default_code'], how='left'
+)
+df_fdcode_plan['forecast_until_start'] = (
+    df_fdcode_plan['forecast_code_qty'].fillna(0) * df_fdcode_plan['size_share']
+)
+df_fdcode_plan.drop(columns=['forecast_code_qty'], inplace=True)
+
+# Tồn dự kiến đầu kỳ (không âm)
+df_fdcode_plan['stock_at_start'] = (
+    df_fdcode_plan['available'] + df_fdcode_plan['order_pen'] - df_fdcode_plan['forecast_until_start']
+).clip(lower=0)
+
+# Tồn đầu kỳ cần có để đạt target (hệ số theo kênh)
+df_fdcode_plan['safety'] = df_fdcode_plan['channel'].map(SAFETY_FACTOR).fillna(2.0)
+df_fdcode_plan['required_stock'] = df_fdcode_plan['fdcode_target_qty'] * df_fdcode_plan['safety']
+
+# ── BƯỚC 1: Xác định subcategory × channel DƯ sớm ────────────────────────────
+# Dùng TOÀN BỘ tồn kho (kể cả fdcode không có bán 90 ngày) để tránh bỏ sót hàng tồn
+_stock_sub = df_stock_fdcode.groupby(['channel', 'subcategory'], as_index=False)['available'].sum()
+_pen_sub = (
+    df_order_pen
+    .merge(df_products_template[['fdcode', 'subcategory']].drop_duplicates('fdcode'), on='fdcode', how='left')
+    .groupby(['channel', 'subcategory'], as_index=False)['order_pen'].sum()
+)
+_forecast_sub = df_fdcode_plan.groupby(['channel', 'subcategory'], as_index=False)['forecast_until_start'].sum()
+_required_sub = df_fdcode_plan.groupby(['channel', 'subcategory'], as_index=False)['required_stock'].sum()
+
+subcat_check = (
+    _stock_sub
+    .merge(_pen_sub,      on=['channel', 'subcategory'], how='outer')
+    .merge(_forecast_sub, on=['channel', 'subcategory'], how='left')
+    .merge(_required_sub, on=['channel', 'subcategory'], how='left')
+)
+subcat_check.fillna({'available': 0, 'order_pen': 0,
+                     'forecast_until_start': 0, 'required_stock': 0}, inplace=True)
+subcat_check['total_stock'] = (
+    subcat_check['available'] + subcat_check['order_pen'] - subcat_check['forecast_until_start']
+).clip(lower=0)
+
+# ── Cross-channel netting: dư kênh này bù thiếu kênh kia trong cùng subcategory ──
+subcat_check['raw_net']     = subcat_check['total_stock'] - subcat_check['required_stock']
+subcat_check['own_surplus'] = subcat_check['raw_net'].clip(lower=0)
+subcat_check['own_deficit'] = (-subcat_check['raw_net']).clip(lower=0)
+
+_cross_surplus = subcat_check.groupby('subcategory')['own_surplus'].sum().rename('_cross_surplus')
+_total_deficit = subcat_check.groupby('subcategory')['own_deficit'].sum().rename('_total_deficit')
+subcat_check = (
+    subcat_check
+    .merge(_cross_surplus.reset_index(), on='subcategory', how='left')
+    .merge(_total_deficit.reset_index(), on='subcategory', how='left')
+)
+
+# Deficit thực tế sau khi trừ phần dư cross-channel (chia pro-rata nếu nhiều kênh thiếu)
+subcat_check['deficit_subcat'] = np.where(
+    subcat_check['_total_deficit'] > 0,
+    (subcat_check['own_deficit'] *
+     (1 - (subcat_check['_cross_surplus'] / subcat_check['_total_deficit']).clip(upper=1))
+    ).clip(lower=0),
+    0
+).round(0)
+subcat_check['surplus'] = subcat_check['deficit_subcat'] <= 0
+subcat_check.drop(columns=['raw_net', 'own_surplus', 'own_deficit', '_cross_surplus', '_total_deficit'], inplace=True)
+
+print('[DEBUG] TRENDY 7 surplus check:')
+print(subcat_check[subcat_check['subcategory'].str.upper() == 'TRENDY 7'][
+    ['channel', 'subcategory', 'available', 'order_pen',
+     'forecast_until_start', 'total_stock', 'required_stock', 'surplus']
+].to_string(index=False))
+
+# ── BƯỚC 2: Phân bổ deficit xuống fdcode chỉ với subcategory THIẾU ────────────
+df_fdcode_plan = df_fdcode_plan.merge(
+    subcat_check[['channel', 'subcategory', 'surplus', 'deficit_subcat', 'required_stock']]
+    .rename(columns={'required_stock': '_req_subcat'}),
+    on=['channel', 'subcategory'], how='left'
+)
+df_fdcode_plan['qty_need_adj'] = np.where(
+    df_fdcode_plan['surplus'].fillna(True) | (df_fdcode_plan['_req_subcat'] <= 0),
+    0,
+    (df_fdcode_plan['deficit_subcat'] * df_fdcode_plan['required_stock']
+     / df_fdcode_plan['_req_subcat']).round(-1)
+)
+df_fdcode_plan.drop(columns=['surplus', 'deficit_subcat', '_req_subcat'], inplace=True)
+# Hệ số tồn hiện tại
+df_fdcode_plan['hst'] = np.where(
+    df_fdcode_plan['avg_qty'] > 0,
+    np.round((df_fdcode_plan['available'] + df_fdcode_plan['order_pen']) / df_fdcode_plan['avg_qty'], 1),
+    np.nan
+)
+
+# ==========================================
+# 11. LỌC VÀ XUẤT KẾT QUẢ
+# ==========================================
+print(f'[DEBUG] days_until_start: {days_until_start}')
+print(f'[DEBUG] qty_need_adj > 0: {(df_fdcode_plan["qty_need_adj"] > 0).sum()} rows trước filter MIN_ORDER_CODE')
+
+# Tổng qty_need_adj mỗi mã (tất cả kênh)
+code_total = df_fdcode_plan[df_fdcode_plan['qty_need_adj'] > 0].groupby('default_code')['qty_need_adj'].sum()
+below_min  = set(code_total[code_total < MIN_ORDER_CODE].index)
+above_min  = set(code_total[code_total >= MIN_ORDER_CODE].index)
+
+# Đánh dấu rank-1 theo từng (channel, subcategory) cụ thể — không dùng tập flat
+df_top1_map = (
+    df_code_plan[df_code_plan['qty_rank'] == 1][['channel', 'subcategory', 'default_code']]
+    .assign(is_top1=True)
+)
+df_plan_marked = df_fdcode_plan.merge(df_top1_map, on=['channel', 'subcategory', 'default_code'], how='left')
+df_plan_marked['is_top1'] = df_plan_marked['is_top1'].fillna(False).astype(bool)
+
+# Một hàng cần rollup khi: mã dưới ngưỡng VÀ không phải rank-1 trong (channel, subcategory) đó
+df_plan_marked['should_rollup'] = (
+    df_plan_marked['default_code'].isin(below_min) & ~df_plan_marked['is_top1']
+)
+
+n_rollup_rows = df_plan_marked['should_rollup'].sum()
+print(f'[DEBUG] mã >= {MIN_ORDER_CODE}: {len(above_min)},  dồn & loại (per channel×subcat): {n_rollup_rows} fdcode rows')
+
+# Gom qty cần rollup theo (channel, subcategory) → đích là rank-1 của CÙNG subcategory
+df_rollup = (
+    df_plan_marked[df_plan_marked['should_rollup'] & (df_plan_marked['qty_need_adj'] > 0)]
+    .groupby(['channel', 'subcategory'], as_index=False)['qty_need_adj']
+    .sum()
+    .rename(columns={'qty_need_adj': 'rollup_qty'})
+    .merge(df_top1_map[['channel', 'subcategory', 'default_code']], on=['channel', 'subcategory'], how='left')
+)
+
+# Giữ: qty_need_adj > 0 VÀ không thuộc nhóm rollup
+df_result = df_plan_marked[
+    (df_plan_marked['qty_need_adj'] > 0) & ~df_plan_marked['should_rollup']
+].drop(columns=['is_top1', 'should_rollup']).copy()
+
+# Cộng rollup_qty vào mã top1, phân bổ theo tỉ trọng size hiện tại
+df_result = df_result.merge(
+    df_rollup[['channel', 'subcategory', 'default_code', 'rollup_qty']],
+    on=['channel', 'subcategory', 'default_code'], how='left'
+)
+df_result['rollup_qty'] = df_result['rollup_qty'].fillna(0)
+
+code_qty_sum = df_result.groupby(['channel', 'default_code'])['qty_need_adj'].transform('sum')
+df_result['qty_need_adj'] = (
+    df_result['qty_need_adj']
+    + df_result['rollup_qty'] * np.where(code_qty_sum > 0, df_result['qty_need_adj'] / code_qty_sum, 0)
+).round(-1)
+df_result.drop(columns=['rollup_qty'], inplace=True)
+
+# Gắn size từ product template
+df_result = df_result.merge(
+    df_products_template[['fdcode', 'size']].drop_duplicates('fdcode'),
+    on='fdcode', how='left'
+)
+
+df_output = df_result[[
+    'channel', 'fdcode', 'size', 'default_code', 'subcategory', 'category',
+    'available', 'avg_qty', 'order_pen', 'hst', 'qty_need_adj'
+]]
+
+# LIST_ORDER
 worksheet_ord = sht.worksheet(SHEET3)
 worksheet_ord.batch_clear(["A5:K"])
-print("Cleared LIST_ORDER from A5 to K.")
+gd.set_with_dataframe(worksheet_ord, df_output, row=5, col=1, include_column_header=True)
+print('Updated LIST_ORDER')
 
-# Ghi dữ liệu mới từ A5
-gd.set_with_dataframe(
-    worksheet_ord,
-    combined_fxt,
-    row=5,
-    col=1,
-    include_column_header=True
+# REPORT_ORDER: tóm tắt theo channel + subcategory + default_code
+df_report = (
+    df_fdcode_plan
+    .groupby(['channel', 'subcategory', 'default_code'], as_index=False)
+    .agg(
+        qty_rank        =('qty_rank',              'min'),
+        target_qty      =('fdcode_target_qty',    'sum'),
+        available       =('available',             'sum'),
+        order_pen       =('order_pen',             'sum'),
+        forecast_to_start=('forecast_until_start', 'sum'),
+        stock_at_start  =('stock_at_start',        'sum'),
+        required_stock  =('required_stock',        'sum'),
+        avg_qty         =('avg_qty',               'sum'),
+        qty_need_adj    =('qty_need_adj',          'sum'),
+    )
+    .sort_values(['channel', 'subcategory', 'qty_rank'])
 )
-print("LIST_ORDER sheet updated with data.")
-
-print("Starting to process REPORT sheet...")
 worksheet_r = sht.worksheet(SHEET11)
 worksheet_r.clear()
-print("Cleared REPORT sheet.")
-gd.set_with_dataframe(worksheet_r, df_order_report)
-print("REPORT sheet updated with data.")
+gd.set_with_dataframe(worksheet_r, df_report)
+print('Updated REPORT_ORDER')
+
+# RAW_STOCK
+worksheet_stock = sht.worksheet(SHEET7)
+worksheet_stock.clear()
+gd.set_with_dataframe(worksheet_stock, df_stock_fdcode)
+print('Updated RAW_STOCK')
+
+# RAW_PRODUCTS
+worksheet_products = sht.worksheet(SHEET8)
+worksheet_products.clear()
+gd.set_with_dataframe(worksheet_products, df_products_template)
+print('Updated RAW_PRODUCTS')
+
+# SEMI_TOP20: tóm tắt theo channel + default_code
+df_top20 = (
+    df_fdcode_plan
+    .groupby(['channel', 'default_code', 'subcategory', 'category'], as_index=False)
+    .agg(
+        avg_qty        =('avg_qty',            'sum'),
+        available      =('available',           'sum'),
+        order_pen      =('order_pen',           'sum'),
+        stock_at_start =('stock_at_start',      'sum'),
+        target_qty     =('fdcode_target_qty',   'sum'),
+        qty_need_adj   =('qty_need_adj',        'sum'),
+    )
+    .sort_values(['channel', 'qty_need_adj'], ascending=[True, False])
+)
+worksheet_top20 = sht.worksheet(SHEET4)
+worksheet_top20.batch_clear(['A1:J'])
+gd.set_with_dataframe(worksheet_top20, df_top20)
+print('Updated SEMI_TOP20')

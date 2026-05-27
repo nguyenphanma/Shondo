@@ -21,7 +21,7 @@ df_tax = df_tax.rename(columns={
     "Mã nhóm khách hàng": "customer_group_code", "Mã thống kê": "statistic_code",
     "Thuế GTGT": "tax", "Doanh thu gồm VAT": "revenue_incl_vat",
     "Giảm giá gồm VAT": "discount_incl_vat", "Trả hàng gồm VAT": "return_incl_vat",
-    "Tổng số lượng": "total_quantity",
+    "Tổng số lượng": "total_quantity", "Tổng thanh toán": "total_payment"
 })
 
 def assign_channel(row):
@@ -42,7 +42,7 @@ def assign_channel(row):
 
 df_tax["channel"] = df_tax.apply(assign_channel, axis=1)
 df_tax_gr = df_tax.groupby(['accounting_date', 'document_date', 'channel']).agg(
-    {"tax": "sum", "revenue_incl_vat": "sum"}
+    {"tax": "sum", "total_payment": "sum"}
 ).reset_index()
 
 with engine.connect() as conn:

@@ -52,7 +52,7 @@ query_data = """
             depot_id, 
             MAX(changed_at) AS max_changed_at
         FROM product_inventory_history
-        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 220636, 142408, 222877, 202374, 217642, 205232, 142411, 198368)
+        WHERE depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 220636, 142408, 222877, 217642, 205232, 142411, 198368, 448734, 92162)
         GROUP BY product_id, depot_id
     ),
     stock_today AS (
@@ -71,7 +71,7 @@ query_data = """
         LEFT JOIN category_tree ct ON ct.external_category_id = ps.category_id
         WHERE 
             pih.available >= 1
-            AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 220636, 142408, 222877, 202374, 217642, 205232, 142411, 198368)
+            AND pih.depot_id NOT IN (142410, 217633, 125224, 111753, 111752, 101011, 220636, 142408, 222877, 217642, 205232, 142411, 198368, 448734, 92162)
             AND DATE(pih.last_updated_at) >= CURRENT_DATE() - INTERVAL 1 DAY
     ),
     stock_last_change AS (
@@ -113,9 +113,9 @@ df_stock['channel'] = df_stock['store'].apply(channel)
 df_stock = pd.merge(df_stock, df_products_template[['fdcode', 'default_code', 'size']], on='fdcode', how='left')
 
 df_stock_filter = df_stock[df_stock['category'].isin(category_setup)]
-
+df_stock_filter = df_stock[df_stock['available'] != 0]
 worksheet_stock = sht.worksheet(SHEET1)
-worksheet_stock.clear()
+worksheet_stock.batch_clear(['A1:K'])
 gd.set_with_dataframe(worksheet_stock, df_stock_filter)
 print("update stock finished.")
 
@@ -177,12 +177,13 @@ with engine.connect() as conn:
 print('Finished query product_template')
 
 worksheet_pr = sht.worksheet(SHEET2)
-worksheet_pr.clear()
+worksheet_pr.batch_clear(['A1:K'])
 gd.set_with_dataframe(worksheet_pr, df_products_template)
 print("update stock finished.")
 
 # KDS
 df_stock_kds = df_stock_filter[df_stock_filter['store'] != 'KHO SỈ']
+df_stock_kds = df_stock_filter[df_stock_filter['available'] != 0]
 # Mở Google Sheets bằng Google Sheets ID
 sht_kds = gs.open_by_key('1tpalIrkQJ-WQCsVxhoPhGLvK2Rb3WzALN8H5vUTGgxE')
 worksheet_stock_kds = sht_kds.worksheet(SHEET1)
